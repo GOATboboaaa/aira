@@ -12,9 +12,10 @@ import streamlit as st
 from core import auth, models
 from core import sync as sync_mod
 from core import session as session_mod
+from core.aira_auth_manager import verify_auth_state, set_session_cookie, clear_session_cookie
 from core.components import footer, auth_card, close_auth_card, trigger_shake
 from core.db import init_db
-from core.styles import inject
+from core.styles import inject, inject_premium_animations
 
 st.set_page_config(
     page_title="Aira — Pilotage financier",
@@ -24,27 +25,109 @@ st.set_page_config(
 )
 init_db()
 inject()
+inject_premium_animations()
 
-# ─── AUTO-LOGIN : restaurer la session depuis l'URL ───────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# AUTH GATE — BLOQUE LE RENDU TANT QUE L'ÉTAT D'AUTH N'EST PAS RÉSOLU
+# ═══════════════════════════════════════════════════════════════════════════
 session_mod.cleanup_expired()
-session_mod.restore_from_url()
+authenticated = verify_auth_state()
 
-# Synchroniser les changements dictés à l'agent
+# ─── Sync + Reset token cleanup (après auth gate) ─────────────────────────
 n = sync_mod.apply_pending()
-if n > 0 and auth.is_authenticated():
+if n > 0 and authenticated:
     st.toast(f"📥 {n} modification(s) synchronisée(s) avec succès !", icon="✅")
 
-# ─── Nettoyer le reset_token de l'URL si on revient du reset ──────────────
 reset_tok = st.query_params.get("reset_token")
 if isinstance(reset_tok, list):
     reset_tok = reset_tok[0] if reset_tok else None
-if reset_tok and auth.is_authenticated():
+if reset_tok and authenticated:
     q = st.query_params
     if "reset_token" in q:
         del q["reset_token"]
     st.query_params = q
 
-# ─── Logo / Hero ────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# VUE AUTHENTIFIÉE — Page d'accueil pour utilisateur connecté
+# ═══════════════════════════════════════════════════════════════════════════
+if authenticated:
+    config = models.get_config()
+    user_email = auth.get_current_user_email()
+
+    st.markdown(
+        """<div style="text-align:center; padding:0.5rem 1rem 0 1rem;">
+            <div style="font-size:2rem; margin-bottom:0.25rem;">✦</div>
+            <h1 style="font-size:2rem; font-weight:800; letter-spacing:-0.03em;
+                       background:linear-gradient(135deg, #7C5CFC, #A78BFA);
+                       -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                       background-clip:text;">
+                Aira
+            </h1>
+            <p style="color:#64748B; font-size:0.85rem;">
+                Connecté en tant que {user_email}
+            </p>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    if st.button("🔑 Tableau de bord", type="primary", use_container_width=True):
+        st.switch_page("pages/1_Dashboard.py")
+
+    st.markdown("""<hr style="margin:1.5rem 0;">""", unsafe_allow_html=True)
+    st.markdown("### Navigation rapide")
+    cols = st.columns(5, gap="medium")
+    nav_items = [
+        ("📊", "Dashboard", "Vue d'ensemble", "1_Dashboard"),
+        ("🎬", "Projets", "Facturation", "2_Projets"),
+        ("🧾", "Dépenses", "Suivi réel", "3_Depenses"),
+        ("📅", "Calendrier", "Prévisions", "6_Calendrier"),
+        ("💰", "Fiscalité", "URSSAF/IR", "4_Fiscalite"),
+    ]
+    session_token = st.query_params.get("session", "")
+    for col, (icon, title, desc, page) in zip(cols, nav_items):
+        with col:
+            st.markdown(
+                f"""<div style="background:#1A1A24; border:1px solid #2A2A3A;
+                        border-radius:12px; padding:1.25rem 0.75rem; text-align:center;
+                        transition:border-color 0.2s, transform 0.2s;"
+                     onmouseover="this.style.borderColor='#7C5CFC'; this.style.transform='translateY(-2px)';"
+                     onmouseout="this.style.borderColor='#2A2A3A'; this.style.transform='translateY(0)';">
+                    <div style="font-size:1.75rem; margin-bottom:0.35rem;">{icon}</div>
+                    <div style="color:#F1F5F9; font-weight:700; font-size:0.9rem;">{title}</div>
+                    <div style="color:#94A3B8; font-size:0.7rem; margin-top:0.15rem;">{desc}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            if st.button(f"Ouvrir {title}", key=f"home_{page}", use_container_width=True):
+                st.switch_page(f"pages/{page}.py")
+
+    st.divider()
+    footer()
+    st.stop()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VUE NON AUTHENTIFIÉE — Login / Forgot / Reset
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─── Détection reset_token dans l'URL ────────────────────────────────────
+query = st.query_params
+url_token = query.get("reset_token", [None])
+if isinstance(url_token, list):
+    url_token = url_token[0] if url_token else None
+
+if url_token:
+    st.session_state.auth_view = "reset"
+    st.session_state.reset_token = url_token
+    query.clear()
+    st.query_params = query
+
+# État par défaut
+if "auth_view" not in st.session_state:
+    st.session_state.auth_view = "login"
+
+current_view = st.session_state.auth_view
+
+# ─── Logo / Hero ──────────────────────────────────────────────────────────
 st.markdown(
     """<div style="text-align:center; padding:2rem 1rem 1rem 1rem;">
         <div style="font-size:3rem; margin-bottom:0.5rem;">✦</div>
@@ -62,252 +145,157 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─── CHECK AUTH : si connecte, montrer la home ==============================
-if auth.is_authenticated():
-    config = models.get_config()
-    user_email = auth.get_current_user_email()
+# ─── Vue : Forgot Password ────────────────────────────────────────────────
+if current_view == "forgot":
+    auth_card("forgot")
+    st.markdown("### 🔐 Mot de passe oublié")
+    st.caption("Saisis ton email pour recevoir un lien de réinitialisation.")
 
-    st.success(f"✅ Connecté en tant que **{user_email}**")
-
-    # Cartes de navigation rapide
-    session_suffix = ""
-    session_token_url = st.query_params.get("session")
-    if isinstance(session_token_url, list):
-        session_token_url = session_token_url[0] if session_token_url else None
-    if session_token_url:
-        session_suffix = f"?session={session_token_url}"
-
-    cols = st.columns(5, gap="medium")
-    cards = [
-        ("📊", "Dashboard", "Vue d'ensemble economique", "1_Dashboard"),
-        ("🎬", "Projets", "Facturation et suivi des paiements", "2_Projets"),
-        ("🧾", "Depenses", "Suivi des depenses reelles", "3_Depenses"),
-        ("📅", "Calendrier", "Abonnements et previsions", "6_Calendrier"),
-        ("💰", "Fiscalite", "URSSAF, IR et seuils", "4_Fiscalite"),
-    ]
-    for col, (icon, title, desc, page) in zip(cols, cards):
-        with col:
-            st.markdown(
-                f"""<div onclick="window.location.href='pages/{page}.py{session_suffix}'"
-                     style="cursor:pointer; background:#1A1A24; border:1px solid #2A2A3A;
-                            border-radius:12px; padding:1.5rem 1rem; text-align:center;
-                            transition:border-color 0.2s, transform 0.2s;"
-                     onmouseover="this.style.borderColor='#7C5CFC'; this.style.transform='translateY(-2px)';"
-                     onmouseout="this.style.borderColor='#2A2A3A'; this.style.transform='translateY(0)';">
-                    <div style="font-size:2rem; margin-bottom:0.5rem;">{icon}</div>
-                    <div style="color:#F1F5F9; font-weight:700; font-size:1rem;">{title}</div>
-                    <div style="color:#94A3B8; font-size:0.8rem; margin-top:0.25rem;">{desc}</div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-            if st.button(f"Ouvrir {title}", key=f"home_{page}"):
-                st.switch_page(f"pages/{page}.py")
-
-    st.divider()
-    cols_info = st.columns(2)
-    with cols_info[0]:
-        st.markdown("**Regime** : Micro-entreprise BNC · Versement liberatoire")
-        st.markdown(f"**URSSAF** : {config.get('taux_urssaf', 0):.1f} % · **IR** : {config.get('taux_ir', 0):.1f} %")
-    with cols_info[1]:
-        st.markdown("**Total prelevements** : ~27,8 % du CA encaisse")
-        st.markdown("**Conseil** : mets ce pourcentage de cote sur chaque encaissement.")
-else:
-    # ─── Vues : Login, Forgot Password, Reset Password ─────────────────
-    # Detecter un reset_token dans l'URL (Streamlit 1.35+)
-    query = st.query_params
-    url_token = query.get("reset_token", [None])
-    if isinstance(url_token, list):
-        url_token = url_token[0] if url_token else None
-
-    if url_token:
-        st.session_state.auth_view = "reset"
-        st.session_state.reset_token = url_token
-        # Nettoyer l'URL pour eviter le re-jeu du token au refresh
-        query.clear()
-        st.query_params = query
-
-    # État par defaut
-    if "auth_view" not in st.session_state:
-        st.session_state.auth_view = "login"
-
-    current_view = st.session_state.auth_view
-
-    # ─── Vue : Forgot Password ────────────────────────────────────────
-    if current_view == "forgot":
-        auth_card("forgot")
-        st.markdown("### 🔐 Mot de passe oublie")
-        st.caption("Saisis ton email pour recevoir un lien de reinitialisation.")
-
-        with st.form("forgot_form"):
-            forgot_email = st.text_input(
-                "Email",
-                placeholder="ex: toi@email.com",
-                key="forgot_email",
-            )
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button(
-                    "📧 Envoyer le lien",
-                    type="primary",
-                    use_container_width=True,
+    with st.form("forgot_form"):
+        email = st.text_input("Email", placeholder="ton@email.com")
+        submitted = st.form_submit_button(
+            "Envoyer le lien", type="primary", use_container_width=True
+        )
+        if submitted:
+            if not email:
+                st.error("Veuillez saisir un email.")
+            else:
+                msg = auth.generate_password_reset(email)
+                st.success(msg)
+                st.info(
+                    "💡 Le lien apparaît dans les logs de l'application "
+                    "(stderr) — vérifie la console Streamlit Cloud."
                 )
-            with col2:
-                if st.form_submit_button("⬅️ Retour", use_container_width=True):
+
+    if st.button("← Retour à la connexion"):
+        st.session_state.auth_view = "login"
+        st.rerun()
+    close_auth_card()
+
+# ─── Vue : Reset Password ────────────────────────────────────────────────
+elif current_view == "reset":
+    auth_card("reset")
+    st.markdown("### 🔑 Nouveau mot de passe")
+    st.caption("Choisis un mot de passe sécurisé (min 6 caractères).")
+
+    with st.form("reset_form"):
+        new_pwd = st.text_input(
+            "Nouveau mot de passe",
+            type="password",
+            placeholder="••••••••",
+        )
+        confirm = st.text_input(
+            "Confirme le mot de passe",
+            type="password",
+            placeholder="••••••••",
+        )
+        submitted = st.form_submit_button(
+            "Réinitialiser", type="primary", use_container_width=True
+        )
+        if submitted:
+            tok = st.session_state.get("reset_token", "")
+            if new_pwd != confirm:
+                st.error("Les mots de passe ne correspondent pas.")
+            elif len(new_pwd) < 6:
+                st.error("Mot de passe trop court (min 6 caractères).")
+            elif not tok:
+                st.error("Token de réinitialisation manquant.")
+            else:
+                ok, msg = auth.reset_password(tok, new_pwd)
+                if ok:
+                    st.success("✅ Mot de passe réinitialisé ! Tu peux te connecter.")
                     st.session_state.auth_view = "login"
                     st.rerun()
+                else:
+                    st.error(msg)
+                    trigger_shake("reset")
 
-        if submitted and forgot_email:
-            msg = auth.generate_password_reset(forgot_email)
-            st.success(msg)
-            st.info(
-                "💡 Sur Streamlit Cloud, le lien est affiche dans les logs "
-                "de l'application (console / stderr). "
-                "Va dans 'Manage app' → 'Logs' pour le trouver, "
-                "ou regarde le terminal si tu es en local."
+    if st.button("← Retour à la connexion"):
+        st.session_state.auth_view = "login"
+        st.rerun()
+    close_auth_card()
+
+# ─── Vue : Login / Register (par défaut) ─────────────────────────────────
+else:
+    auth_card("login")
+    tab_login, tab_register = st.tabs(["Connexion", "Inscription"])
+
+    # ─── Login ──────────────────────────────────────────────────────────
+    with tab_login:
+        with st.form("login_form"):
+            email = st.text_input("Email", placeholder="ton@email.com")
+            password = st.text_input(
+                "Mot de passe", type="password", placeholder="••••••••"
             )
-            # Afficher le lien directement pour le debug (uniquement local)
-            import sys
-            from io import StringIO
-            st.code(
-                f"# Le lien de reset a ete imprime dans les logs.\n"
-                f"# Copie le ?reset_token=... depuis l'URL ci-dessous\n"
-                f"# et ajoute-le a l'URL de l'app :\n"
-                f"# {auth.RESET_BASE_URL}?reset_token=TON_TOKEN",
-                language="text",
+            remember = st.checkbox("Se souvenir de moi", value=True)
+            submitted = st.form_submit_button(
+                "Se connecter", type="primary", use_container_width=True
             )
-        close_auth_card()
+            if submitted:
+                if not email or not password:
+                    st.error("Veuillez remplir tous les champs.")
+                    trigger_shake("login")
+                else:
+                    ok, msg, user_id = auth.login_user(email, password)
+                    if ok and user_id:
+                        # Créer session persistante
+                        from core.session import create_session
 
-    # ─── Vue : Reset Password ─────────────────────────────────────────
-    elif current_view == "reset":
-        auth_card("reset")
-        token = st.session_state.get("reset_token", "")
-        # Verifier si le token est encore valide
-        user_id = auth.verify_reset_token(token)
+                        raw_token = create_session(user_id)
+                        auth.set_session(user_id, email)
+                        st.query_params["session"] = raw_token
 
-        if user_id is None:
-            st.error(
-                "❌ Lien invalide ou expire. "
-                "Fais une nouvelle demande de reinitialisation."
-            )
-            if st.button("⬅️ Retour à la connexion", use_container_width=True):
-                st.session_state.auth_view = "login"
-                st.query_params.clear()
-                st.rerun()
-        else:
-            st.markdown("### 🔐 Nouveau mot de passe")
-            st.caption("Choisis un nouveau mot de passe (min 6 caracteres).")
+                        # Cookie iframe-safe
+                        set_session_cookie(raw_token)
 
-            with st.form("reset_form"):
-                new_pass = st.text_input(
-                    "Nouveau mot de passe",
-                    type="password",
-                    placeholder="Min 6 caracteres",
-                    key="reset_new_pass",
-                )
-                new_pass2 = st.text_input(
-                    "Confirmer le mot de passe",
-                    type="password",
-                    key="reset_new_pass2",
-                )
-                if st.form_submit_button(
-                    "✅ Réinitialiser le mot de passe",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    if not new_pass:
-                        st.error("Mot de passe obligatoire.")
-                    elif new_pass != new_pass2:
-                        st.error("Les mots de passe ne correspondent pas.")
-                    elif len(new_pass) < 6:
-                        st.error("Mot de passe trop court (min 6 caracteres).")
+                        st.success("✅ Connecté !")
+                        st.rerun()
                     else:
-                        ok, msg = auth.reset_password(token, new_pass)
-                        if ok:
-                            st.success(
-                                "✅ Mot de passe réinitialise ! "
-                                "Connecte-toi avec ton nouveau mot de passe."
-                            )
-                            # Nettoyer et revenir au login
-                            if "reset_token" in st.session_state:
-                                del st.session_state.reset_token
-                            st.session_state.auth_view = "login"
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {msg}")
-        close_auth_card()
+                        st.error(msg)
+                        trigger_shake("login")
 
-    # ─── Vue : Login / Register (defaut) ──────────────────────────
-    else:
-        auth_card("login")
-        st.markdown("### 🔐 Connexion")
-        tab_login, tab_register = st.tabs(["Se connecter", "Creer un compte"])
-
-        with tab_login:
-            with st.form("login_form"):
-                email = st.text_input("Email", placeholder="ex: toi@email.com")
-                password = st.text_input("Mot de passe", type="password")
-                remember = st.checkbox("Se souvenir de moi (7 jours)", value=True)
-                if st.form_submit_button("Se connecter", type="primary", use_container_width=True):
-                    if not email or not password:
-                        st.error("Email et mot de passe obligatoires.")
-                    else:
-                        ok, msg, user_id = auth.login_user(email, password)
-                        if ok:
-                            auth.set_session(user_id, email.strip().lower())
-                            if remember:
-                                raw_token = session_mod.create_session(user_id)
-                                q = st.query_params
-                                q["session"] = raw_token
-                                st.query_params = q
-                            st.success("✅ Connecte !")
-                            st.rerun()
-                        else:
-                            trigger_shake("login")
-                            st.error(f"❌ {msg}")
-            # Lien "Mot de passe oublie"
-            st.markdown(
-                f"<div style='text-align:center; margin-top:0.5rem;'>"
-                f"<a href='#' onclick='return false;' "
-                f"style='color:#A78BFA; font-size:0.85rem; "
-                f"text-decoration:none; cursor:pointer;' "
-                f"id='forgot-link'>"
-                f"Mot de passe oublie ?</a></div>",
-                unsafe_allow_html=True,
-            )
-            if st.button("Mot de passe oublie ?", key="goto_forgot",
-                         use_container_width=True):
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔐 Mot de passe oublié ?", use_container_width=True):
                 st.session_state.auth_view = "forgot"
                 st.rerun()
 
-        with tab_register:
-            with st.form("register_form"):
-                email_r = st.text_input("Email", placeholder="ex: toi@email.com",
-                                        key="reg_email")
-                password_r = st.text_input(
-                    "Mot de passe (min 6 caracteres)", type="password",
-                    key="reg_pass"
-                )
-                password_r2 = st.text_input(
-                    "Confirmer le mot de passe", type="password",
-                    key="reg_pass2"
-                )
-                if st.form_submit_button("Creer mon compte", type="primary",
-                                         use_container_width=True):
-                    if not email_r or not password_r:
-                        st.error("Tous les champs sont obligatoires.")
-                    elif password_r != password_r2:
-                        st.error("Les mots de passe ne correspondent pas.")
+    # ─── Register ───────────────────────────────────────────────────────
+    with tab_register:
+        with st.form("register_form"):
+            reg_email = st.text_input(
+                "Email", placeholder="ton@email.com", key="reg_email"
+            )
+            reg_password = st.text_input(
+                "Mot de passe",
+                type="password",
+                placeholder="•••••••• (min 6 car.)",
+                key="reg_password",
+            )
+            reg_confirm = st.text_input(
+                "Confirme le mot de passe",
+                type="password",
+                placeholder="••••••••",
+                key="reg_confirm",
+            )
+            submitted_reg = st.form_submit_button(
+                "Créer mon compte", type="primary", use_container_width=True
+            )
+            if submitted_reg:
+                if not reg_email or not reg_password:
+                    st.error("Veuillez remplir tous les champs.")
+                elif reg_password != reg_confirm:
+                    st.error("Les mots de passe ne correspondent pas.")
+                else:
+                    ok, err_msg = auth.register_user(reg_email, reg_password)
+                    if ok:
+                        st.success(
+                            "✅ Compte créé ! Tu peux te connecter."
+                        )
                     else:
-                        ok, msg = auth.register_user(email_r, password_r)
-                        if ok:
-                            _, _, uid = auth.login_user(email_r, password_r)
-                            if uid:
-                                auth.set_session(uid, email_r.strip().lower())
-                            st.success("✅ Compte cree ! Bienvenue sur Aira.")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {msg}")
+                        st.error(err_msg)
 
-        close_auth_card()
+    close_auth_card()
 
 footer()

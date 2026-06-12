@@ -337,20 +337,15 @@ def is_authenticated() -> bool:
 def require_auth() -> bool:
     """Appeler en haut de chaque page. Retourne True si authentifie.
 
-    Tente d'abord de restaurer la session depuis l'URL (refresh navigateur).
-    Si pas authentifie, affiche un message et propose d'aller a l'accueil.
+    Vérifie d'abord via verify_auth_state() (session_state → URL param →
+    cookie JS bridge). Si pas authentifié, bloque le rendu et propose
+    d'aller à la page de connexion.
     """
-    if is_authenticated():
-        return True
+    # Nouveau : auth gate persistante avec cookie + URL param + JS bridge
+    from core.aira_auth_manager import verify_auth_state
 
-    # Tentative de recovery depuis le session token dans l'URL
-    try:
-        from core.session import restore_from_url
-        restored = restore_from_url()
-        if restored is not None and is_authenticated():
-            return True
-    except Exception:
-        pass
+    if verify_auth_state():
+        return True
 
     import streamlit as st
 
