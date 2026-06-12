@@ -151,6 +151,8 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if row and "CHECK (id = 1)" in row["sql"]:
         # Ancien schéma détecté — migrer les données
+        # Nettoie une éventuelle table orpheline d'une migration précédente
+        conn.execute("DROP TABLE IF EXISTS config_fiscale_old")
         conn.execute("ALTER TABLE config_fiscale RENAME TO config_fiscale_old")
         # Le nouveau schéma est déjà créé par executescript + IF NOT EXISTS,
         # mais comme l'ancienne table existait, IF NOT EXISTS ne l'a pas re-créée.
