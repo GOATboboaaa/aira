@@ -13,6 +13,7 @@ from core import auth, models
 from core.components import footer
 from core.db import init_db
 from core.styles import inject
+from core import sync as sync_mod
 
 st.set_page_config(
     page_title="Aira — Pilotage financier",
@@ -22,6 +23,12 @@ st.set_page_config(
 )
 init_db()
 inject()
+
+# Synchroniser les changements dictés à l'agent (uniquement pour
+# l'utilisateur connecté, une seule fois par changement)
+n = sync_mod.apply_pending()
+if n > 0 and auth.is_authenticated():
+    st.toast(f"📥 {n} modification(s) synchronisée(s) avec succès !", icon="✅")
 
 # ─── Logo / Hero ────────────────────────────────────────────────────────────
 st.markdown(

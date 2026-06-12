@@ -122,6 +122,12 @@ CREATE TABLE IF NOT EXISTS planned_expenses (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
 );
+
+-- Table de suivi des synchronisations cloud
+CREATE TABLE IF NOT EXISTS sync_log (
+    change_id       TEXT PRIMARY KEY,
+    applied_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 
