@@ -555,13 +555,131 @@ def inject():
             .auth-shake,
             .auth-card::before,
             .auth-btn:hover,
-            .auth-toast {{
+            .auth-toast,
+            .aira-fade-in,
+            [data-testid="stMetricValue"] {{
                 animation: none !important;
                 transform: none !important;
                 transition: none !important;
             }}
+            [data-testid="stMetricValue"] {{
+                opacity: 1 !important;
+            }}
+        }}
+
+        /* ═══════════════════════════════════════════════════════════════
+           PAGE TRANSITION — Fade-in du conteneur principal
+           ═══════════════════════════════════════════════════════════════ */
+        .aira-fade-in {{
+            animation: airaFadeIn 0.4s ease-out;
+        }}
+        @keyframes airaFadeIn {{
+            from {{ opacity: 0; transform: translateY(6px); }}
+            to   {{ opacity: 1; transform: translateY(0); }}
+        }}
+
+        /* ═══════════════════════════════════════════════════════════════
+           COUNT-UP — Cacher les metrics le temps que JS les anime
+           ═══════════════════════════════════════════════════════════════ */
+        .aira-countup-ready [data-testid="stMetricValue"] {{
+            opacity: 0;
+            transition: none;
+        }}
+        .aira-countup-done [data-testid="stMetricValue"] {{
+            opacity: 1;
         }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+    # ─── JS : Page transition + Count-up ────────────────────────────────
+    # Applique la classe de fade après un micro-delai (laisse Streamlit finir son render)
+    st.markdown("""
+    <script>
+    (function() {
+      /* ─── FADE-IN TRANSITION ─────────────────────────── */
+      function addFadeIn() {
+        var container = document.querySelector('.main .block-container');
+        if (container) {
+          container.classList.add('aira-fade-in');
+          // Re-trigger animation on each Streamlit re-run
+        }
+      }
+
+      /* ─── COUNT-UP ANIMATION ──────────────────────────── */
+      function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+      function countUpMetrics() {
+        var metrics = document.querySelectorAll('[data-testid="stMetricValue"]');
+        if (metrics.length === 0) return;
+
+        // Add ready class to hide initial values
+        document.body.classList.add('aira-countup-ready');
+
+        metrics.forEach(function(el) {
+          // Skip if already animated in this session
+          if (el.getAttribute('data-aira-counted')) return;
+
+          var raw = el.textContent.trim();
+          var numStr = raw.replace(/[^0-9,.-]/g, '').replace(',', '.');
+          var target = parseFloat(numStr);
+          if (isNaN(target) || target <= 0) {
+            el.style.opacity = '1';
+            el.setAttribute('data-aira-counted', '1');
+            return;
+          }
+
+          var suffix = raw.replace(/[0-9,.-]/g, '').trim();
+          var duration = 1.2;
+          var start = null;
+
+          function format(v) {
+            var n = Math.round(v);
+            var formatted = n.toLocaleString('fr-FR');
+            return formatted + (suffix ? ' ' + suffix : '');
+          }
+
+          // Start from 0
+          el.textContent = '0' + (suffix ? ' ' + suffix : '');
+          el.style.opacity = '1';
+          el.setAttribute('data-aira-counted', '1');
+
+          function step(ts) {
+            if (!start) start = ts;
+            var elapsed = (ts - start) / 1000;
+            var progress = Math.min(elapsed / duration, 1);
+            var current = easeOut(progress) * target;
+            el.textContent = format(current);
+            if (progress < 1) {
+              requestAnimationFrame(step);
+            } else {
+              el.textContent = format(target);
+            }
+          }
+          requestAnimationFrame(step);
+        });
+
+        setTimeout(function() {
+          document.body.classList.remove('aira-countup-ready');
+          document.body.classList.add('aira-countup-done');
+        }, 100);
+      }
+
+      /* ─── RUN ─────────────────────────────────────────── */
+      addFadeIn();
+      countUpMetrics();
+
+      // Re-run when Streamlit injects NEW metrics (full re-render only)
+      var observer = new MutationObserver(function() {
+        // Only act if there are unprocessed metrics
+        var fresh = document.querySelectorAll('[data-testid="stMetricValue"]:not([data-aira-counted])');
+        if (fresh.length > 0) {
+          addFadeIn();
+          countUpMetrics();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """, unsafe_allow_html=True)
