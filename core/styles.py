@@ -593,70 +593,60 @@ def inject_premium_animations():
         f"""
         <style>
         /* ═══════════════════════════════════════════════════════════════
-           1. STAGGERED POP-IN — zoom + fade en cascade
+           1. SMOOTH ENTRANCE — fade + 3px slide (ultra-subtle)
            ═══════════════════════════════════════════════════════════════ */
-        @keyframes airaPopIn {{
+        @keyframes airaSleekReveal {{
             from {{
                 opacity: 0;
-                transform: scale(0.96) translateY(10px);
+                transform: translateY(3px);
             }}
             to {{
                 opacity: 1;
-                transform: scale(1) translateY(0);
+                transform: translateY(0);
             }}
         }}
 
-        /* Cibler les conteneurs principaux du dashboard */
-        .main .block-container > section,
-        .main .block-container > [data-testid="column"],
-        .main .block-container > .stElementContainer,
-        .main .block-container > .element-container {{
-            will-change: transform, opacity;
-            animation: airaPopIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+        /* Cibler UNIQUEMENT le contenu final — pas les wrappers vides */
+        div[data-testid="stMetric"],
+        .stDataFrame,
+        .stTable,
+        .stPlotlyChart,
+        .stEcharts,
+        .main .stButton,
+        .stForm {{
+            will-change: opacity, transform;
+            animation: airaSleekReveal 0.4s ease-out both;
         }}
 
-        /* Délais stagger — 6 paliers progressifs (0.05s → 0.55s) */
-        .main .block-container > section:nth-child(1),
-        .main .block-container > [data-testid="column"]:nth-child(1),
-        .main .block-container > .stElementContainer:nth-child(1),
-        .main .block-container > .element-container:nth-child(1) {{
+        /* Stagger sur les éléments de contenu uniquement (sans nth-child structurel) */
+        div[data-testid="stMetric"]:nth-child(1),
+        .stDataFrame:nth-child(1) {{
             animation-delay: 0.05s;
         }}
-        .main .block-container > section:nth-child(2),
-        .main .block-container > [data-testid="column"]:nth-child(2),
-        .main .block-container > .stElementContainer:nth-child(2),
-        .main .block-container > .element-container:nth-child(2) {{
-            animation-delay: 0.15s;
+        div[data-testid="stMetric"]:nth-child(2),
+        .stDataFrame:nth-child(2) {{
+            animation-delay: 0.12s;
         }}
-        .main .block-container > section:nth-child(3),
-        .main .block-container > [data-testid="column"]:nth-child(3),
-        .main .block-container > .stElementContainer:nth-child(3),
-        .main .block-container > .element-container:nth-child(3) {{
-            animation-delay: 0.25s;
+        div[data-testid="stMetric"]:nth-child(3),
+        .stDataFrame:nth-child(3) {{
+            animation-delay: 0.19s;
         }}
-        .main .block-container > section:nth-child(4),
-        .main .block-container > [data-testid="column"]:nth-child(4),
-        .main .block-container > .stElementContainer:nth-child(4),
-        .main .block-container > .element-container:nth-child(4) {{
-            animation-delay: 0.35s;
+        div[data-testid="stMetric"]:nth-child(4),
+        .stDataFrame:nth-child(4) {{
+            animation-delay: 0.26s;
         }}
-        .main .block-container > section:nth-child(5),
-        .main .block-container > [data-testid="column"]:nth-child(5),
-        .main .block-container > .stElementContainer:nth-child(5),
-        .main .block-container > .element-container:nth-child(5) {{
-            animation-delay: 0.45s;
+        div[data-testid="stMetric"]:nth-child(5),
+        .stDataFrame:nth-child(5) {{
+            animation-delay: 0.33s;
         }}
-        .main .block-container > section:nth-child(6),
-        .main .block-container > [data-testid="column"]:nth-child(6),
-        .main .block-container > .stElementContainer:nth-child(6),
-        .main .block-container > .element-container:nth-child(6) {{
-            animation-delay: 0.55s;
+        div[data-testid="stMetric"]:nth-child(6),
+        .stDataFrame:nth-child(6) {{
+            animation-delay: 0.40s;
         }}
 
-        /* Fade-in général du conteneur principal */
+        /* Fade-in général du conteneur principal (utile pour le reste) */
         .main .block-container {{
-            will-change: transform, opacity;
-            animation: airaFadeIn 0.4s ease-out;
+            animation: airaFadeIn 0.35s ease-out;
         }}
 
         /* ═══════════════════════════════════════════════════════════════
@@ -713,10 +703,13 @@ def inject_premium_animations():
         /* ─── Accessibility ─── */
         @media (prefers-reduced-motion: reduce) {{
             .main .block-container,
-            .main .block-container > section,
-            .main .block-container > [data-testid="column"],
-            .main .block-container > .stElementContainer,
-            .main .block-container > .element-container,
+            div[data-testid="stMetric"],
+            .stDataFrame,
+            .stTable,
+            .stPlotlyChart,
+            .stEcharts,
+            .main .stButton,
+            .stForm,
             div[data-testid="metric-container"],
             div[data-testid="column"] > div:not([class]),
             .main .stButton button,
