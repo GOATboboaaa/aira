@@ -245,6 +245,10 @@ else:
                         auth.set_session(user_id, email)
                         st.query_params["auth_token"] = raw_token
 
+                        # Sauvegarder dans le cache serveur (survit au F5)
+                        from core.aira_auth_manager import store_auth
+                        store_auth(raw_token, user_id, email)
+
                         st.success("✅ Connecté !")
                         st.rerun()
                     else:

@@ -1,17 +1,20 @@
-"""Aira Auth Manager — auth par URL param, sans cookie (ITP-safe).
+"""Aira Auth Manager — auth hybride URL param + cache serveur.
 
-Résout les race conditions du cycle de rendu Streamlit en bloquant
-tout affichage TANT QUE l'état d'auth n'est pas résolu.
+Survit au F5 (rafraîchissement navigateur) via un mécanisme double :
+  1. Token conservé dans l'URL (`?auth_token=`) — pas de purge
+  2. Cache serveur `st.cache_resource` — survit au WebSocket Streamlit
 
-Fonctionnement :
-  1. verify_auth_state() appelée en TOUT PREMIER sur chaque page
-  2. Check : session_state → URL param (`?auth_token=` ou `?session=`)
-  3. Si token valide → restore la session + purge l'URL
-  4. Si rien → return False (le caller affiche le login)
+Architecture :
+  - Le token est un random 32 bytes (pas un JWT), hashé en DB
+  - Le garder dans l'URL est safe : pas de données utilisateur exposées
+  - Le cache serveur permet un fallback si le param URL est perdu
+    (navigation externe, bookmarks partiels, etc.)
 
-Pas de cookie : les navigateurs bloquent les cookies tierce partie
-en iframe (ITP, SameSite par défaut). L'URL param est le seul canal
-fiable cross-iframe.
+Ordre de vérification (verify_auth_state) :
+  1. session_state → return True (fast path, navigation entre pages)
+  2. URL param → valide DB → restore + stocke en cache → return True
+  3. Cache serveur → restore + ré-injecte URL param + rerun → return True
+  4. Rien → return False (page de login)
 """
 
 from __future__ import annotations
@@ -25,19 +28,75 @@ from core import session as session_mod
 
 logger = logging.getLogger("aira.auth_manager")
 
+# Nom de la clé auth dans l'URL
+_URL_KEY = "auth_token"
+
+# Durée de validité du cache (secondes) — 7 jours comme la session
+_CACHE_TTL = 7 * 24 * 60 * 60
+
 
 # =============================================================================
-# HELPERS
+# SESSION STORE (serveur) — survit au F5
+# =============================================================================
+
+
+@st.cache_resource(ttl=_CACHE_TTL)
+def _get_session_store() -> dict:
+    """Cache serveur global des sessions actives.
+
+    Survit au rafraîchissement Streamlit (F5) car le même processus
+    Python sert toutes les sessions. Clé = token brut, valeur = user_data.
+
+    Format : {token: {"user_id": int, "email": str}}
+    """
+    return {}
+
+
+# =============================================================================
+# API PUBLIQUE
+# =============================================================================
+
+
+def store_auth(token: str, user_id: int, email: str) -> None:
+    """Stocke la session dans le cache serveur (post-login)."""
+    store = _get_session_store()
+    store[token] = {"user_id": user_id, "email": email}
+
+
+def remove_auth(token: str) -> None:
+    """Supprime la session du cache serveur (logout)."""
+    store = _get_session_store()
+    store.pop(token, None)
+
+
+def restore_from_store(token: str) -> bool:
+    """Restaure session_state depuis le cache serveur.
+
+    Returns:
+        True si la session a été restaurée.
+    """
+    store = _get_session_store()
+    data = store.get(token)
+    if data is None:
+        return False
+
+    from core.auth import set_session
+
+    set_session(data["user_id"], data["email"])
+    return True
+
+
+# =============================================================================
+# HELPERS URL
 # =============================================================================
 
 
 def _get_url_token() -> Optional[str]:
     """Lit le token depuis st.query_params.
 
-    Accepte les clés 'auth_token' ou 'session' pour compatibilité.
-    Retourne le premier token trouvé, ou None.
+    Accepte 'auth_token' ou 'session' pour compatibilité ascendante.
     """
-    for key in ("auth_token", "session"):
+    for key in (_URL_KEY, "session"):
         token = st.query_params.get(key)
         if isinstance(token, list):
             token = token[0] if token else None
@@ -46,20 +105,23 @@ def _get_url_token() -> Optional[str]:
     return None
 
 
-def _purge_url_token() -> None:
-    """Supprime auth_token ET session des query params."""
+def _inject_url_token(token: str) -> None:
+    """Ajoute ou met à jour le token dans l'URL."""
+    # Priorité à auth_token (nouveau) ; supprime session si présent
     q = st.query_params
-    changed = False
-    for key in ("auth_token", "session"):
-        if key in q:
-            del q[key]
-            changed = True
-    if changed:
-        st.query_params = q
+    if "session" in q:
+        del q["session"]
+    q[_URL_KEY] = token
+    st.query_params = q
+
+
+# =============================================================================
+# VALIDATION
+# =============================================================================
 
 
 def _validate_and_restore(token: str) -> bool:
-    """Valide un token et restaure la session si valide.
+    """Valide un token contre la DB et restore la session.
 
     Returns:
         True si la session a été restaurée.
@@ -79,6 +141,8 @@ def _validate_and_restore(token: str) -> bool:
             from core.auth import set_session
 
             set_session(user_id, row["email"])
+            # Back up dans le cache serveur
+            store_auth(token, user_id, row["email"])
             return True
     finally:
         conn.close()
@@ -86,7 +150,7 @@ def _validate_and_restore(token: str) -> bool:
 
 
 # =============================================================================
-# VERIFY AUTH STATE — BLOQUE LE RENDU TANT QUE PAS RÉSOLU
+# VERIFY AUTH STATE — BLOQUE LE RENDU
 # =============================================================================
 
 
@@ -95,16 +159,16 @@ def verify_auth_state() -> bool:
 
     Ordre des checks :
       1. session_state authentifié → return True (fast path)
-      2. URL param `?auth_token=` ou `?session=` → valide, restore,
-         purge l'URL, return True
-      3. Rien → return False (le caller affiche le login)
+      2. URL param → valide DB → restore + cache serveur → return True
+      3. Cache serveur → restore + ré-injecte URL param + st.rerun()
+      4. Rien → return False (le caller affiche le login)
 
     Returns:
         True si authentifié, False sinon.
     """
-    # ─── 1. DÉJÀ AUTHENTIFIÉ (session_state) ──────────────────────────
     from core.auth import is_authenticated
 
+    # ─── 1. DÉJÀ AUTHENTIFIÉ (session_state) ──────────────────────────
     if is_authenticated():
         return True
 
@@ -113,12 +177,33 @@ def verify_auth_state() -> bool:
     if url_token:
         restored = _validate_and_restore(url_token)
         if restored:
-            # Sécurité : purger le token de l'URL immédiatement
-            _purge_url_token()
+            # On GARDE le token dans l'URL — pas de purge
+            # Il survivra au F5
             return True
         else:
             # Token invalide → nettoyer l'URL
-            _purge_url_token()
+            q = st.query_params
+            for key in (_URL_KEY, "session"):
+                if key in q:
+                    del q[key]
+            st.query_params = q
 
-    # ─── 3. PAS AUTHENTIFIÉ ────────────────────────────────────────────
+    # ─── 3. CACHE SERVEUR (fallback F5) ────────────────────────────────
+    # Si on arrive ici, le token URL est absent ou invalide.
+    # On checke le cache serveur qui survit au F5.
+    store = _get_session_store()
+    for token, data in store.items():
+        # Vérifier que la session DB est encore valide
+        user_id = session_mod.validate_session(token)
+        if user_id and user_id == data["user_id"]:
+            # Restaurer depuis le cache
+            from core.auth import set_session
+
+            set_session(data["user_id"], data["email"])
+            # Ré-injecter le token dans l'URL pour le prochain F5
+            _inject_url_token(token)
+            st.rerun()
+            return True  # après rerun, on revient au check 1 ou 2
+
+    # ─── 4. PAS AUTHENTIFIÉ ────────────────────────────────────────────
     return False

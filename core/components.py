@@ -353,11 +353,13 @@ def render_sidebar(page_title: str | None = None):
             )
             if st.button("🔒 Deconnexion", key="logout_btn", use_container_width=True):
                 from core import session as session_mod
-                session_token = st.query_params.get("session")
+                from core.aira_auth_manager import remove_auth
+                session_token = st.query_params.get("session") or st.query_params.get("auth_token")
                 if isinstance(session_token, list):
                     session_token = session_token[0] if session_token else None
                 if session_token:
                     session_mod.delete_session(session_token)
+                    remove_auth(session_token)
                 q = st.query_params
                 for key in ("session", "auth_token"):
                     if key in q:
