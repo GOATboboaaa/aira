@@ -583,7 +583,8 @@ def inject_premium_animations():
     """Injecte des animations CSS-only premium (pas de JS, pas de stripping).
 
     Effets :
-      1. Staggered Cascade — slideUpFade + délai nth-child sur les blocs
+      1. Staggered Pop-In — scale(0.96) + fade + translateY avec délai
+         nth-child progressif (0.05s → 0.55s). cubic-bezier fluide.
       2. Cyber-Glow Hover — lévitation (-2px) + halo néon violet
 
     À appeler APRÈS inject() sur chaque page du dashboard.
@@ -592,60 +593,69 @@ def inject_premium_animations():
         f"""
         <style>
         /* ═══════════════════════════════════════════════════════════════
-           1. STAGGERED CASCADE — slideUpFade avec délai incrémental
+           1. STAGGERED POP-IN — zoom + fade en cascade
            ═══════════════════════════════════════════════════════════════ */
-        @keyframes slideUpFade {{
+        @keyframes airaPopIn {{
             from {{
                 opacity: 0;
-                transform: translateY(10px);
+                transform: scale(0.96) translateY(10px);
             }}
             to {{
                 opacity: 1;
-                transform: translateY(0);
+                transform: scale(1) translateY(0);
             }}
         }}
 
-        /* Cibler les sections principales du dashboard */
+        /* Cibler les conteneurs principaux du dashboard */
         .main .block-container > section,
         .main .block-container > [data-testid="column"],
+        .main .block-container > .stElementContainer,
         .main .block-container > .element-container {{
-            animation: slideUpFade 0.5s ease-out both;
+            will-change: transform, opacity;
+            animation: airaPopIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
         }}
 
-        /* Délais stagger — 6 paliers de 0.05s */
+        /* Délais stagger — 6 paliers progressifs (0.05s → 0.55s) */
         .main .block-container > section:nth-child(1),
         .main .block-container > [data-testid="column"]:nth-child(1),
+        .main .block-container > .stElementContainer:nth-child(1),
         .main .block-container > .element-container:nth-child(1) {{
             animation-delay: 0.05s;
         }}
         .main .block-container > section:nth-child(2),
         .main .block-container > [data-testid="column"]:nth-child(2),
+        .main .block-container > .stElementContainer:nth-child(2),
         .main .block-container > .element-container:nth-child(2) {{
-            animation-delay: 0.10s;
+            animation-delay: 0.15s;
         }}
         .main .block-container > section:nth-child(3),
         .main .block-container > [data-testid="column"]:nth-child(3),
+        .main .block-container > .stElementContainer:nth-child(3),
         .main .block-container > .element-container:nth-child(3) {{
-            animation-delay: 0.15s;
+            animation-delay: 0.25s;
         }}
         .main .block-container > section:nth-child(4),
         .main .block-container > [data-testid="column"]:nth-child(4),
+        .main .block-container > .stElementContainer:nth-child(4),
         .main .block-container > .element-container:nth-child(4) {{
-            animation-delay: 0.20s;
+            animation-delay: 0.35s;
         }}
         .main .block-container > section:nth-child(5),
         .main .block-container > [data-testid="column"]:nth-child(5),
+        .main .block-container > .stElementContainer:nth-child(5),
         .main .block-container > .element-container:nth-child(5) {{
-            animation-delay: 0.25s;
+            animation-delay: 0.45s;
         }}
         .main .block-container > section:nth-child(6),
         .main .block-container > [data-testid="column"]:nth-child(6),
+        .main .block-container > .stElementContainer:nth-child(6),
         .main .block-container > .element-container:nth-child(6) {{
-            animation-delay: 0.30s;
+            animation-delay: 0.55s;
         }}
 
         /* Fade-in général du conteneur principal */
         .main .block-container {{
+            will-change: transform, opacity;
             animation: airaFadeIn 0.4s ease-out;
         }}
 
@@ -705,6 +715,7 @@ def inject_premium_animations():
             .main .block-container,
             .main .block-container > section,
             .main .block-container > [data-testid="column"],
+            .main .block-container > .stElementContainer,
             .main .block-container > .element-container,
             div[data-testid="metric-container"],
             div[data-testid="column"] > div:not([class]),
@@ -714,6 +725,7 @@ def inject_premium_animations():
                 animation: none !important;
                 transform: none !important;
                 transition: none !important;
+                will-change: auto !important;
             }}
         }}
         </style>
