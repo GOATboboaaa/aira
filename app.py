@@ -12,7 +12,7 @@ import streamlit as st
 from core import auth, models
 from core import sync as sync_mod
 from core import session as session_mod
-from core.aira_auth_manager import verify_auth_state, set_session_cookie, clear_session_cookie
+from core.aira_auth_manager import verify_auth_state
 from core.components import footer, auth_card, close_auth_card, trigger_shake
 from core.db import init_db
 from core.styles import inject, inject_premium_animations
@@ -243,10 +243,7 @@ else:
 
                         raw_token = create_session(user_id)
                         auth.set_session(user_id, email)
-                        st.query_params["session"] = raw_token
-
-                        # Cookie iframe-safe
-                        set_session_cookie(raw_token)
+                        st.query_params["auth_token"] = raw_token
 
                         st.success("✅ Connecté !")
                         st.rerun()
