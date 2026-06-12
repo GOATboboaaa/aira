@@ -146,6 +146,17 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
                 f"ALTER TABLE {t} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0"
             )
 
+    # ═══ Migration users : reset_token + reset_token_expiry ═══
+    users_cols = existing_cols.get("users", set())
+    if "reset_token" not in users_cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN reset_token TEXT"
+        )
+    if "reset_token_expiry" not in users_cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN reset_token_expiry TEXT"
+        )
+
     # ═══ Migration config_fiscale : ancien schéma CHECK(id=1) → per-user ═══
     row = conn.execute(
         "SELECT sql FROM sqlite_master "
