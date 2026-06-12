@@ -11,6 +11,7 @@ import streamlit as st
 
 from core import auth, models, fiscal
 from core.components import (
+    animated_kpi_card,
     kpi_card,
     section_header,
     tax_waterfall,
@@ -67,29 +68,29 @@ st.markdown(
 col_kpis = st.columns(4, gap="medium")
 
 with col_kpis[0]:
-    kpi_card("CA encaissé", f"{ca_enc:,.0f} €",
-             help_text="Assiette des cotisations (projets payés)",
-             delta=f"{ca_fac:,.0f} € facturé" if ca_fac != ca_enc else None)
+    animated_kpi_card("CA encaissé", ca_enc,
+                      help_text="Assiette des cotisations (projets payés)",
+                      delta=f"{ca_fac:,.0f} € facturé" if ca_fac != ca_enc else None)
 
 with col_kpis[1]:
     pct_prelev = calc.taux_total
-    kpi_card("Prélèvements", f"{calc.total_prelevements:,.0f} €",
-             delta=f"{pct_prelev:.1f} % du CA",
-             delta_color="inverse",
-             help_text="URSSAF + Versement libératoire IR")
+    animated_kpi_card("Prélèvements", calc.total_prelevements,
+                      delta=f"{pct_prelev:.1f} % du CA",
+                      delta_color="inverse",
+                      help_text="URSSAF + Versement libératoire IR")
 
 with col_kpis[2]:
-    kpi_card("Dépenses réelles", f"{depenses:,.0f} €",
-             help_text="Non déductibles fiscalement, impactent la trésorerie",
-             delta_color="inverse")
+    animated_kpi_card("Dépenses réelles", depenses,
+                      help_text="Non déductibles fiscalement, impactent la trésorerie",
+                      delta_color="inverse")
 
 with col_kpis[3]:
     delta_color = "normal" if net_reel >= 0 else "inverse"
     delta_str = f"+{net_reel:,.0f} €" if net_reel >= 0 else f"{net_reel:,.0f} €"
-    kpi_card("Résultat net", f"{net_reel:,.0f} €",
-             delta=delta_str if ca_enc > 0 else None,
-             delta_color=delta_color,
-             help_text="CA encaissé − prélèvements − dépenses réelles")
+    animated_kpi_card("Résultat net", net_reel,
+                      delta=delta_str if ca_enc > 0 else None,
+                      delta_color=delta_color,
+                      help_text="CA encaissé − prélèvements − dépenses réelles")
 
 # ─── Section : Détail des prélèvements ────────────────────────────────────────
 section_header("Répartition du CA", badge="Revenus - Charges")

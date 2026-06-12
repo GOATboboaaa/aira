@@ -25,6 +25,72 @@ def kpi_card(label: str, value: str, delta: str | None = None,
     st.metric(label=label, value=value, **delta_kw, **help_kw)
 
 
+def animated_kpi_card(
+    label: str,
+    value: float,
+    prefix: str = "",
+    suffix: str = " €",
+    decimals: int = 0,
+    delta: str | None = None,
+    delta_color: str = "normal",
+    duration: float = 1.2,
+    help_text: str | None = None,
+    separator: str = ",",
+):
+    """KPI card avec animation count-up (de 0 à la valeur réelle).
+
+    Remplace st.metric() par du HTML custom avec data-countup pour
+    l'animation JS.
+
+    Args:
+        label: Nom du KPI.
+        value: Valeur numérique (le compteur anime de 0 à cette valeur).
+        prefix: Texte avant le nombre (ex: "").
+        suffix: Texte après le nombre (ex: " €").
+        decimals: Nombre de décimales (0 pour entiers).
+        delta: Texte delta optionnel (ex: "+50k € facturé").
+        delta_color: "normal" (vert), "inverse" (rouge), "off" (gris).
+        duration: Durée de l'animation en secondes (défaut 1.2).
+        help_text: Texte d'aide optionnel.
+        separator: Séparateur de milliers (défaut ",").
+    """
+    delta_color_map = {
+        "normal": "#10B981",
+        "inverse": "#F43F5E",
+        "off": "#94A3B8",
+    }
+    delta_c = delta_color_map.get(delta_color, "#94A3B8")
+
+    delta_html = ""
+    if delta:
+        delta_html = (
+            f'<div style="font-size:0.8rem; margin-top:0.25rem; '
+            f'color:{delta_c};">{delta}</div>'
+        )
+
+    help_html = ""
+    if help_text:
+        help_html = f'<div class="kpi-help">{help_text}</div>'
+
+    st.markdown(
+        f"""<div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">
+                <span data-countup="true"
+                      data-target="{value}"
+                      data-duration="{duration}"
+                      data-prefix="{prefix}"
+                      data-suffix="{suffix}"
+                      data-decimals="{decimals}"
+                      data-separator="{separator}">0</span>
+            </div>
+            {delta_html}
+            {help_html}
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def section_header(title: str, badge: str | None = None):
     """Affiche un en-tête de section avec badge optionnel."""
     badge_html = f'<span class="badge">{badge}</span>' if badge else ""

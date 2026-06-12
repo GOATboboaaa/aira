@@ -548,6 +548,13 @@ def inject():
             to {{ opacity: 0; }}
         }}
 
+        /* ─── Count-up ─── */
+        .countup-value {{
+            display: inline-block;
+            will-change: contents;
+            font-variant-numeric: tabular-nums;
+        }}
+
         /* ─── Accessibility: prefer reduced motion ─── */
         @media (prefers-reduced-motion: reduce) {{
             .auth-form,
@@ -555,13 +562,90 @@ def inject():
             .auth-shake,
             .auth-card::before,
             .auth-btn:hover,
-            .auth-toast {{
+            .auth-toast,
+            .countup-value {{
                 animation: none !important;
                 transform: none !important;
                 transition: none !important;
+            }}
+            [data-countup] {{
+                /* Show final value immediately when reduced motion */
+                opacity: 1;
             }}
         }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+    # ─── Animated Counter JS (injecté une fois) ────────────────────────────
+    # NOTE: ce st.markdown utilise un triple-quoted string normal (pas f-string),
+    # donc les { } du JS n'ont pas besoin d'être échappés.
+    st.markdown("""
+    <script>
+    (function() {
+      if (window.__airaCounterLoaded) return;
+      window.__airaCounterLoaded = true;
+
+      /* easeOut cubic — matching Framer Motion ease: "easeOut" */
+      function easeOut(t) {
+        return 1 - Math.pow(1 - t, 3);
+      }
+
+      function animateCounter(el) {
+        var raw = el.getAttribute('data-target');
+        var target = parseFloat(raw.replace(/,/g, ''));
+        if (isNaN(target)) return;
+        var duration = parseFloat(el.getAttribute('data-duration')) || 1.2;
+        var prefix = el.getAttribute('data-prefix') || '';
+        var suffix = el.getAttribute('data-suffix') || '';
+        var decimals = parseInt(el.getAttribute('data-decimals')) || 0;
+        var separator = el.getAttribute('data-separator') || ',';
+        var startTime = null;
+
+        function format(val) {
+          var parts = val.toFixed(decimals).split('.');
+          parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, separator);
+          return prefix + parts.join('.') + suffix;
+        }
+
+        function step(timestamp) {
+          if (!startTime) startTime = timestamp;
+          var elapsed = (timestamp - startTime) / 1000;
+          var progress = Math.min(elapsed / duration, 1);
+          var current = easeOut(progress) * target;
+          el.textContent = format(current);
+          if (progress < 1) {
+            requestAnimationFrame(step);
+          } else {
+            el.textContent = format(target);
+          }
+        }
+
+        requestAnimationFrame(step);
+      }
+
+      function initCounters() {
+        var els = document.querySelectorAll('[data-countup]');
+        els.forEach(animateCounter);
+      }
+
+      // Run on load + on Streamlit re-run (partial rendering)
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCounters);
+      } else {
+        initCounters();
+      }
+
+      // MutationObserver: catch new counters from Streamlit DOM updates
+      var observer = new MutationObserver(function() {
+        var newEls = document.querySelectorAll('[data-countup]:not([data-counter-initialized])');
+        newEls.forEach(function(el) {
+          el.setAttribute('data-counter-initialized', 'true');
+          animateCounter(el);
+        });
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """, unsafe_allow_html=True)
