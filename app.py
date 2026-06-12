@@ -10,10 +10,11 @@ from __future__ import annotations
 import streamlit as st
 
 from core import auth, models
+from core import sync as sync_mod
+from core import session as session_mod
 from core.components import footer
 from core.db import init_db
 from core.styles import inject
-from core import sync as sync_mod
 
 st.set_page_config(
     page_title="Aira — Pilotage financier",
@@ -24,11 +25,45 @@ st.set_page_config(
 init_db()
 inject()
 
-# Synchroniser les changements dictés à l'agent (uniquement pour
-# l'utilisateur connecté, une seule fois par changement)
+# ─── AUTO-LOGIN : restaurer la session depuis l'URL ───────────────────────
+session_mod.cleanup_expired()
+session_token = st.query_params.get("session")
+if isinstance(session_token, list):
+    session_token = session_token[0] if session_token else None
+
+if not auth.is_authenticated() and session_token:
+    user_id = session_mod.validate_session(session_token)
+    if user_id is not None:
+        # Recuperer l'email depuis la DB
+        conn = None
+        try:
+            from core.db import get_connection
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT email FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if row:
+                auth.set_session(user_id, row["email"])
+        except Exception:
+            pass
+        finally:
+            if conn:
+                conn.close()
+
+# Synchroniser les changements dictés à l'agent
 n = sync_mod.apply_pending()
 if n > 0 and auth.is_authenticated():
     st.toast(f"📥 {n} modification(s) synchronisée(s) avec succès !", icon="✅")
+
+# ─── Nettoyer le reset_token de l'URL si on revient du reset ──────────────
+reset_tok = st.query_params.get("reset_token")
+if isinstance(reset_tok, list):
+    reset_tok = reset_tok[0] if reset_tok else None
+if reset_tok and auth.is_authenticated():
+    q = st.query_params
+    if "reset_token" in q:
+        del q["reset_token"]
+    st.query_params = q
 
 # ─── Logo / Hero ────────────────────────────────────────────────────────────
 st.markdown(
@@ -220,6 +255,7 @@ else:
             with st.form("login_form"):
                 email = st.text_input("Email", placeholder="ex: toi@email.com")
                 password = st.text_input("Mot de passe", type="password")
+                remember = st.checkbox("Se souvenir de moi (7 jours)", value=True)
                 if st.form_submit_button("Se connecter", type="primary", use_container_width=True):
                     if not email or not password:
                         st.error("Email et mot de passe obligatoires.")
@@ -227,6 +263,11 @@ else:
                         ok, msg, user_id = auth.login_user(email, password)
                         if ok:
                             auth.set_session(user_id, email.strip().lower())
+                            if remember:
+                                raw_token = session_mod.create_session(user_id)
+                                q = st.query_params
+                                q["session"] = raw_token
+                                st.query_params = q
                             st.success("✅ Connecte !")
                             st.rerun()
                         else:

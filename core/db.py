@@ -128,6 +128,19 @@ CREATE TABLE IF NOT EXISTS sync_log (
     change_id       TEXT PRIMARY KEY,
     applied_at      TEXT DEFAULT (datetime('now'))
 );
+
+-- Sessions persistantes (auto-login 7 jours)
+CREATE TABLE IF NOT EXISTS sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    token_hash      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash
+    ON sessions(token_hash);
 """
 
 

@@ -157,6 +157,16 @@ def render_sidebar(page_title: str | None = None):
                 unsafe_allow_html=True,
             )
             if st.button("🔒 Deconnexion", key="logout_btn", use_container_width=True):
+                from core import session as session_mod
+                session_token = st.query_params.get("session")
+                if isinstance(session_token, list):
+                    session_token = session_token[0] if session_token else None
+                if session_token:
+                    session_mod.delete_session(session_token)
+                q = st.query_params
+                if "session" in q:
+                    del q["session"]
+                st.query_params = q
                 auth_mod.logout_user()
                 st.switch_page("app.py")
 
