@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Data privée (ne JAMAIS commit — contient tes finances)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Streamlit (caches locaux)
+.streamlit/secrets.toml
+
+# Environnement
+.env
+.env.local
+*.key
+*.pem

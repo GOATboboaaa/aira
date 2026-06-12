@@ -1,0 +1,14 @@
+[theme]
+# "Kinetik" Design System — micro-entreprise dashboard for creators
+primaryColor = "#7C5CFC"
+backgroundColor = "#0F0F13"
+secondaryBackgroundColor = "#1A1A24"
+textColor = "#F1F5F9"
+font = "sans serif"
+
+[server]
+runOnSave = false
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false
