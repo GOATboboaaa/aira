@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def kpi_card(label: str, value: str, delta: str | None = None,
@@ -23,6 +24,200 @@ def kpi_card(label: str, value: str, delta: str | None = None,
     help_kw = {"help": help_text} if help_text else {}
     delta_kw = {"delta": delta, "delta_color": delta_color} if delta else {}
     st.metric(label=label, value=value, **delta_kw, **help_kw)
+
+
+def animated_kpi_row(
+    ca_enc: float,
+    ca_fac: float,
+    total_prelevements: float,
+    pct_prelev: float,
+    depenses: float,
+    net_reel: float,
+    taux_urssaf: float,
+    taux_ir: float,
+    annee: int = 2026,
+):
+    """Rend les 4 KPIs du dashboard dans un composant isolé avec count-up animé.
+
+    Utilise st.components.v1.html() pour que le HTML/CSS/JS cohabitent
+    dans le même iframe — pas de stripping de scripts par Streamlit,
+    pas de conflit de sanitization.
+
+    Les valeurs numériques sont passées en data-target pour le JS count-up.
+    """
+    # ─── Pré-calcul des deltas et couleurs ────────────────────────────────
+    delta_ca = f"{ca_fac:,.0f} € facturé" if ca_fac != ca_enc and ca_fac > 0 else ""
+
+    delta_color_prel = "#F43F5E"  # inverse
+    delta_prel = f"{pct_prelev:.1f} % du CA"
+
+    delta_color_net = "#10B981" if net_reel >= 0 else "#F43F5E"
+    delta_net = ""
+    if ca_enc > 0:
+        delta_net = f"+{net_reel:,.0f} €" if net_reel >= 0 else f"{net_reel:,.0f} €"
+
+    # ─── CSS (injecté dans l'iframe) ──────────────────────────────────────
+    css = """
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Source Sans Pro', -apple-system, sans-serif;
+        background: transparent;
+      }
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 500px) {
+        .kpi-grid { grid-template-columns: 1fr; }
+      }
+      .kpi-card {
+        background: #1A1A24;
+        border: 1px solid #2A2A3A;
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .kpi-card:hover {
+        border-color: rgba(124, 92, 252, 0.4);
+        box-shadow: 0 4px 12px rgba(124, 92, 252, 0.08);
+      }
+      .kpi-label {
+        color: #94A3B8;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .kpi-label .help-icon {
+        cursor: help;
+        opacity: 0.5;
+        font-size: 0.7rem;
+      }
+      .kpi-value {
+        color: #F1F5F9;
+        font-size: 1.75rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-top: 0.25rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .kpi-delta {
+        font-size: 0.8rem;
+        margin-top: 0.25rem;
+      }
+      .kpi-help {
+        color: #64748B;
+        font-size: 0.7rem;
+        margin-top: 0.25rem;
+        cursor: help;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .kpi-value { opacity: 1 !important; }
+      }
+    </style>
+    """
+
+    # ─── Générateur de card ───────────────────────────────────────────────
+    def card(label, value, target_id, help_text="", delta="", delta_color="#10B981"):
+        help_icon = f'<span class="help-icon" title="{help_text}">ⓘ</span>' if help_text else ""
+        help_row = f'<div class="kpi-help">{help_text}</div>' if help_text else ""
+        delta_row = f'<div class="kpi-delta" style="color:{delta_color}">{delta}</div>' if delta else ""
+        return f"""
+        <div class="kpi-card">
+          <div class="kpi-label">{label} {help_icon}</div>
+          <div class="kpi-value">
+            <span id="{target_id}" data-target="{value:,.0f}">0</span>
+          </div>
+          {delta_row}
+          {help_row}
+        </div>"""
+
+    # ─── Cards ────────────────────────────────────────────────────────────
+    cards_html = ""
+    cards_html += card(
+        "CA encaissé", ca_enc, "kpi-ca",
+        help_text="Assiette des cotisations (projets payés)",
+        delta=delta_ca,
+        delta_color="#10B981",
+    )
+    cards_html += card(
+        "Prélèvements", total_prelevements, "kpi-prel",
+        help_text="URSSAF + Versement libératoire IR",
+        delta=delta_prel,
+        delta_color=delta_color_prel,
+    )
+    cards_html += card(
+        "Dépenses réelles", depenses, "kpi-dep",
+        help_text="Non déductibles fiscalement, impactent la trésorerie",
+    )
+    cards_html += card(
+        "Résultat net", net_reel, "kpi-net",
+        help_text=("CA encaissé − prélèvements − dépenses réelles"
+                   if ca_enc > 0 else ""),
+        delta=delta_net,
+        delta_color=delta_color_net,
+    )
+
+    # ─── JS Count-up ──────────────────────────────────────────────────────
+    js = """
+    <script>
+    (function() {
+      function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+      function parseTarget(el) {
+        var raw = el.getAttribute('data-target');
+        if (!raw) return NaN;
+        return parseFloat(raw.replace(/,/g, ''));
+      }
+
+      function animate(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var target = parseTarget(el);
+        if (isNaN(target) || target <= 0) return;
+
+        var suffix = '';
+        var text = el.textContent.trim();
+        if (text.indexOf('\u20AC') !== -1) suffix = ' \u20AC';
+
+        var duration = 1.2;
+        var start = null;
+
+        function format(v) {
+          var n = Math.round(v);
+          return n.toLocaleString('fr-FR') + suffix;
+        }
+
+        el.textContent = '0' + suffix;
+
+        function step(ts) {
+          if (!start) start = ts;
+          var progress = Math.min((ts - start) / 1000 / duration, 1);
+          el.textContent = format(easeOut(progress) * target);
+          if (progress < 1) requestAnimationFrame(step);
+          else el.textContent = format(target);
+        }
+        requestAnimationFrame(step);
+      }
+
+      animate('kpi-ca');
+      animate('kpi-prel');
+      animate('kpi-dep');
+      animate('kpi-net');
+    })();
+    </script>
+    """
+
+    html = f"<div class='kpi-grid'>{cards_html}</div>{css}{js}"
+    components.html(html, height=185, scrolling=False)
 
 
 def section_header(title: str, badge: str | None = None):

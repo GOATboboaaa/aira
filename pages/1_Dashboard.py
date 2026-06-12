@@ -11,6 +11,7 @@ import streamlit as st
 
 from core import auth, models, fiscal
 from core.components import (
+    animated_kpi_row,
     kpi_card,
     section_header,
     tax_waterfall,
@@ -63,33 +64,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─── Ligne KPI principale ─────────────────────────────────────────────────────
-col_kpis = st.columns(4, gap="medium")
-
-with col_kpis[0]:
-    kpi_card("CA encaissé", f"{ca_enc:,.0f} €",
-             help_text="Assiette des cotisations (projets payés)",
-             delta=f"{ca_fac:,.0f} € facturé" if ca_fac != ca_enc else None)
-
-with col_kpis[1]:
-    pct_prelev = calc.taux_total
-    kpi_card("Prélèvements", f"{calc.total_prelevements:,.0f} €",
-             delta=f"{pct_prelev:.1f} % du CA",
-             delta_color="inverse",
-             help_text="URSSAF + Versement libératoire IR")
-
-with col_kpis[2]:
-    kpi_card("Dépenses réelles", f"{depenses:,.0f} €",
-             help_text="Non déductibles fiscalement, impactent la trésorerie",
-             delta_color="inverse")
-
-with col_kpis[3]:
-    delta_color = "normal" if net_reel >= 0 else "inverse"
-    delta_str = f"+{net_reel:,.0f} €" if net_reel >= 0 else f"{net_reel:,.0f} €"
-    kpi_card("Résultat net", f"{net_reel:,.0f} €",
-             delta=delta_str if ca_enc > 0 else None,
-             delta_color=delta_color,
-             help_text="CA encaissé − prélèvements − dépenses réelles")
+# ─── Ligne KPI principale (animée — composant isolé) ─────────────────────
+animated_kpi_row(
+    ca_enc=ca_enc,
+    ca_fac=ca_fac,
+    total_prelevements=calc.total_prelevements,
+    pct_prelev=calc.taux_total,
+    depenses=depenses,
+    net_reel=net_reel,
+    taux_urssaf=calc.taux_urssaf,
+    taux_ir=calc.taux_ir,
+    annee=annee,
+)
 
 # ─── Section : Détail des prélèvements ────────────────────────────────────────
 section_header("Répartition du CA", badge="Revenus - Charges")
