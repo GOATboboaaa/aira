@@ -15,8 +15,8 @@ from core.styles import inject
 st.set_page_config(page_title="Aira — Projets", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("2_Projets")
 auth.require_auth()
+render_sidebar("2_Projets")
 
 st.title("🎬 Projets / Facturation")
 

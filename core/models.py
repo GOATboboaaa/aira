@@ -19,10 +19,23 @@ from core.db import get_connection
 # =============================================================================
 
 
+class AuthenticationRequiredError(RuntimeError):
+    """Levée quand une fonction métier est appelée sans utilisateur connecté."""
+    pass
+
+
 def _uid() -> int:
-    """Retourne le user_id courant, ou 0 si pas connecté (fallback)."""
+    """Retourne le user_id courant.
+
+    Lève AuthenticationRequiredError si pas connecté — ne retourne JAMAIS 0
+    pour éviter les corruptions silencieuses ou les FK violations.
+    """
     uid = get_current_user_id()
-    return uid if uid is not None else 0
+    if uid is None:
+        raise AuthenticationRequiredError(
+            "Tu dois être connecté pour accéder à cette fonctionnalité."
+        )
+    return uid
 
 
 def get_config(uid: int | None = None) -> dict:

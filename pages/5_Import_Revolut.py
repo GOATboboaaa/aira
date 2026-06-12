@@ -11,8 +11,8 @@ from config import taux
 st.set_page_config(page_title="Aira — Import Revolut", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("5_Import_Revolut")
 auth.require_auth()
+render_sidebar("5_Import_Revolut")
 
 st.title("💳 Import Revolut")
 

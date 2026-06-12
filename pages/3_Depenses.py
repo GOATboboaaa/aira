@@ -16,8 +16,8 @@ from config import taux
 st.set_page_config(page_title="Aira — Dépenses", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("3_Depenses")
 auth.require_auth()
+render_sidebar("3_Depenses")
 
 st.title("🧾 Dépenses")
 

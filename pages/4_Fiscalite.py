@@ -14,8 +14,8 @@ from core.styles import inject
 st.set_page_config(page_title="Aira — Fiscalité", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("4_Fiscalite")
 auth.require_auth()
+render_sidebar("4_Fiscalite")
 
 st.title("💰 Fiscalité")
 

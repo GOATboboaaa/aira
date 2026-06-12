@@ -166,36 +166,36 @@ def render_sidebar(page_title: str | None = None):
             if st.button(label, key=f"nav_{page}", use_container_width=True):
                 st.switch_page(f"pages/{page}.py")
 
-        st.divider()
+        if auth_mod.is_authenticated():
+            st.divider()
 
-        # Aperçu rapide
-        from core import models
-        from config import taux
+            # Aperçu rapide
+            from core import models
 
-        config = models.get_config()
-        ca = models.ca_encaisse(2026)
-        dep = models.total_depenses(2026)
-        taux_u = config.get("taux_urssaf", 0)
-        taux_i = config.get("taux_ir", 0)
+            config = models.get_config()
+            ca = models.ca_encaisse(2026)
+            dep = models.total_depenses(2026)
+            taux_u = config.get("taux_urssaf", 0)
+            taux_i = config.get("taux_ir", 0)
 
-        st.markdown("### Aperçu rapide")
-        st.markdown(
-            f"""<div style="background:#14141E; border-radius:8px; padding:0.75rem;">
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
-                    <span style="color:#94A3B8;">CA 2026</span>
-                    <span style="color:#F1F5F9; font-weight:600;">{ca:,.0f} €</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:0.25rem;">
-                    <span style="color:#94A3B8;">Dépenses</span>
-                    <span style="color:#F1F5F9; font-weight:600;">{dep:,.0f} €</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:0.25rem;">
-                    <span style="color:#94A3B8;">Prélèvements</span>
-                    <span style="color:#F1F5F9; font-weight:600;">{taux_u + taux_i:.1f}%</span>
-                </div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
+            st.markdown("### Aperçu rapide")
+            st.markdown(
+                f"""<div style="background:#14141E; border-radius:8px; padding:0.75rem;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
+                        <span style="color:#94A3B8;">CA 2026</span>
+                        <span style="color:#F1F5F9; font-weight:600;">{ca:,.0f} €</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:0.25rem;">
+                        <span style="color:#94A3B8;">Dépenses</span>
+                        <span style="color:#F1F5F9; font-weight:600;">{dep:,.0f} €</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:0.25rem;">
+                        <span style="color:#94A3B8;">Prélèvements</span>
+                        <span style="color:#F1F5F9; font-weight:600;">{taux_u + taux_i:.1f}%</span>
+                    </div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
 
 def page_header(title: str, subtitle: str | None = None, icon: str = ""):

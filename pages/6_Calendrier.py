@@ -22,8 +22,8 @@ from core.styles import inject
 st.set_page_config(page_title="Aira — Calendrier", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("6_Calendrier")
 auth.require_auth()
+render_sidebar("6_Calendrier")
 
 # ─── Gestion mois courant ───────────────────────────────────────────────────
 today = date.today()

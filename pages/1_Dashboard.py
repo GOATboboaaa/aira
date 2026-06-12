@@ -23,8 +23,8 @@ from core.styles import inject
 st.set_page_config(page_title="Aira — Dashboard", page_icon="✦", layout="wide")
 init_db()
 inject()
-render_sidebar("1_Dashboard")
 auth.require_auth()
+render_sidebar("1_Dashboard")
 
 config = models.get_config()
 annees = models.annees_disponibles() or [date.today().year]
