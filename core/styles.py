@@ -577,3 +577,146 @@ def inject():
         """,
         unsafe_allow_html=True,
     )
+
+
+def inject_premium_animations():
+    """Injecte des animations CSS-only premium (pas de JS, pas de stripping).
+
+    Effets :
+      1. Staggered Cascade — slideUpFade + délai nth-child sur les blocs
+      2. Cyber-Glow Hover — lévitation (-2px) + halo néon violet
+
+    À appeler APRÈS inject() sur chaque page du dashboard.
+    """
+    st.markdown(
+        f"""
+        <style>
+        /* ═══════════════════════════════════════════════════════════════
+           1. STAGGERED CASCADE — slideUpFade avec délai incrémental
+           ═══════════════════════════════════════════════════════════════ */
+        @keyframes slideUpFade {{
+            from {{
+                opacity: 0;
+                transform: translateY(10px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+
+        /* Cibler les sections principales du dashboard */
+        .main .block-container > section,
+        .main .block-container > [data-testid="column"],
+        .main .block-container > .element-container {{
+            animation: slideUpFade 0.5s ease-out both;
+        }}
+
+        /* Délais stagger — 6 paliers de 0.05s */
+        .main .block-container > section:nth-child(1),
+        .main .block-container > [data-testid="column"]:nth-child(1),
+        .main .block-container > .element-container:nth-child(1) {{
+            animation-delay: 0.05s;
+        }}
+        .main .block-container > section:nth-child(2),
+        .main .block-container > [data-testid="column"]:nth-child(2),
+        .main .block-container > .element-container:nth-child(2) {{
+            animation-delay: 0.10s;
+        }}
+        .main .block-container > section:nth-child(3),
+        .main .block-container > [data-testid="column"]:nth-child(3),
+        .main .block-container > .element-container:nth-child(3) {{
+            animation-delay: 0.15s;
+        }}
+        .main .block-container > section:nth-child(4),
+        .main .block-container > [data-testid="column"]:nth-child(4),
+        .main .block-container > .element-container:nth-child(4) {{
+            animation-delay: 0.20s;
+        }}
+        .main .block-container > section:nth-child(5),
+        .main .block-container > [data-testid="column"]:nth-child(5),
+        .main .block-container > .element-container:nth-child(5) {{
+            animation-delay: 0.25s;
+        }}
+        .main .block-container > section:nth-child(6),
+        .main .block-container > [data-testid="column"]:nth-child(6),
+        .main .block-container > .element-container:nth-child(6) {{
+            animation-delay: 0.30s;
+        }}
+
+        /* Fade-in général du conteneur principal */
+        .main .block-container {{
+            animation: airaFadeIn 0.4s ease-out;
+        }}
+
+        /* ═══════════════════════════════════════════════════════════════
+           2. CYBER-GLOW HOVER — lévitation + halo néon violet
+           ═══════════════════════════════════════════════════════════════ */
+
+        /* ─── Métriques natives ─── */
+        div[data-testid="metric-container"] {{
+            transition: transform 0.3s ease, box-shadow 0.3s ease,
+                        border-color 0.3s ease !important;
+        }}
+        div[data-testid="metric-container"]:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(124, 92, 252, 0.3);
+            border-color: rgba(124, 92, 252, 0.6) !important;
+        }}
+
+        /* ─── Colonnes (conteneurs internes) ─── */
+        div[data-testid="column"] > div:not([class]) {{
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }}
+        div[data-testid="column"] > div:not([class]):hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(124, 92, 252, 0.25);
+        }}
+
+        /* ─── Boutons (dashboard, pas sidebar) ─── */
+        .main .stButton button {{
+            transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+        }}
+        .main .stButton button:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(124, 92, 252, 0.3);
+        }}
+
+        /* ─── DataFrames ─── */
+        .stDataFrame {{
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }}
+        .stDataFrame:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(124, 92, 252, 0.2);
+        }}
+
+        /* ─── Alertes ─── */
+        .stAlert {{
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }}
+        .stAlert:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(124, 92, 252, 0.2);
+        }}
+
+        /* ─── Accessibility ─── */
+        @media (prefers-reduced-motion: reduce) {{
+            .main .block-container,
+            .main .block-container > section,
+            .main .block-container > [data-testid="column"],
+            .main .block-container > .element-container,
+            div[data-testid="metric-container"],
+            div[data-testid="column"] > div:not([class]),
+            .main .stButton button,
+            .stDataFrame,
+            .stAlert {{
+                animation: none !important;
+                transform: none !important;
+                transition: none !important;
+            }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )

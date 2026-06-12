@@ -19,11 +19,12 @@ from core.components import (
     render_sidebar,
 )
 from core.db import init_db
-from core.styles import inject
+from core.styles import inject, inject_premium_animations
 
 st.set_page_config(page_title="Aira — Dashboard", page_icon="✦", layout="wide")
 init_db()
 inject()
+inject_premium_animations()
 auth.require_auth()
 render_sidebar("1_Dashboard")
 
