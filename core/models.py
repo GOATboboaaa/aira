@@ -395,3 +395,332 @@ def annees_disponibles() -> list[int]:
         return annees
     finally:
         conn.close()
+
+
+# =============================================================================
+# ABONNEMENTS (subscriptions)
+# =============================================================================
+
+
+def add_subscription(
+    name: str,
+    amount: float,
+    frequency: str,
+    billing_day: int,
+    category: str = "Abonnements logiciels",
+    last_detected: str | None = None,
+    is_manual: bool = True,
+) -> int:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO subscriptions
+               (name, amount, frequency, billing_day, category, last_detected, is_manual)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (name, amount, frequency, billing_day, category, last_detected,
+             1 if is_manual else 0),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_subscriptions() -> pd.DataFrame:
+    conn = get_connection()
+    try:
+        return pd.read_sql_query(
+            "SELECT * FROM subscriptions ORDER BY name", conn
+        )
+    finally:
+        conn.close()
+
+
+def get_subscriptions_list() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM subscriptions ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def update_subscription(sub_id: int, **fields) -> None:
+    if not fields:
+        return
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"UPDATE subscriptions SET {cols} WHERE id = ?",
+            (*fields.values(), sub_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_subscription(sub_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM subscriptions WHERE id = ?", (sub_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# =============================================================================
+# DÉPENSES PLANIFIÉES (planned_expenses — projections calendrier)
+# =============================================================================
+
+
+def generate_planned_expenses(
+    year: int,
+    month: int | None = None,
+) -> None:
+    """Generer (ou met a jour) les depenses planifiees pour chaque abonnement actif
+    sur la periode donnee. Si month est None, genere pour toute l annee."""
+    conn = get_connection()
+    try:
+        subs = conn.execute(
+            "SELECT * FROM subscriptions"
+        ).fetchall()
+
+        import calendar
+
+        for sub in subs:
+            sub = dict(sub)
+            for m in ([month] if month else range(1, 13)):
+                max_day = calendar.monthrange(year, m)[1]
+                day = min(sub["billing_day"], max_day)
+                due_date = f"{year}-{m:02d}-{day:02d}"
+
+                existing = conn.execute(
+                    "SELECT id FROM planned_expenses "
+                    "WHERE subscription_id = ? AND due_date = ?",
+                    (sub["id"], due_date),
+                ).fetchone()
+
+                if not existing:
+                    conn.execute(
+                        """INSERT INTO planned_expenses
+                           (subscription_id, name, amount, due_date, status)
+                           VALUES (?, ?, ?, ?, 'predicted')""",
+                        (sub["id"], sub["name"], sub["amount"], due_date),
+                    )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_planned_expenses(
+    year: int,
+    month: int | None = None,
+) -> pd.DataFrame:
+    """Retourne les depenses planifiees pour un mois donne (ou toute l annee)."""
+    conn = get_connection()
+    try:
+        if month:
+            query = (
+                "SELECT pe.*, s.frequency, s.is_manual, s.category "
+                "FROM planned_expenses pe "
+                "LEFT JOIN subscriptions s ON pe.subscription_id = s.id "
+                "WHERE strftime('%Y', pe.due_date) = ? "
+                "AND strftime('%m', pe.due_date) = ? "
+                "ORDER BY pe.due_date ASC"
+            )
+            df = pd.read_sql_query(
+                query, conn, params=(str(year), f"{month:02d}")
+            )
+        else:
+            query = (
+                "SELECT pe.*, s.frequency, s.is_manual, s.category "
+                "FROM planned_expenses pe "
+                "LEFT JOIN subscriptions s ON pe.subscription_id = s.id "
+                "WHERE strftime('%Y', pe.due_date) = ? "
+                "ORDER BY pe.due_date ASC"
+            )
+            df = pd.read_sql_query(query, conn, params=(str(year),))
+        return df
+    finally:
+        conn.close()
+
+
+def mark_planned_paid(expense_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE planned_expenses SET status = 'paid' WHERE id = ?",
+            (expense_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_planned_expense(expense_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM planned_expenses WHERE id = ?", (expense_id,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_calendar_cashflow(year: int, month: int) -> dict:
+    """Calcule le resume financier du mois : total abonnements, etc."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(pe.amount), 0) AS total_predicted
+               FROM planned_expenses pe
+               WHERE strftime('%Y', pe.due_date) = ?
+                 AND strftime('%m', pe.due_date) = ?
+                 AND pe.status = 'predicted'""",
+            (str(year), f"{month:02d}"),
+        ).fetchone()
+        total_predicted = float(row["total_predicted"]) if row else 0.0
+
+        row2 = conn.execute(
+            """SELECT COALESCE(SUM(pe.amount), 0) AS total_paid
+               FROM planned_expenses pe
+               WHERE strftime('%Y', pe.due_date) = ?
+                 AND strftime('%m', pe.due_date) = ?
+                 AND pe.status = 'paid'""",
+            (str(year), f"{month:02d}"),
+        ).fetchone()
+        total_paid = float(row2["total_paid"]) if row2 else 0
+
+        row3 = conn.execute(
+            "SELECT COUNT(*) AS n FROM subscriptions"
+        ).fetchone()
+        abos_count = row3["n"] if row3 else 0
+
+        return {
+            "total_predicted": total_predicted,
+            "total_paid": total_paid,
+            "total_all": total_predicted + total_paid,
+            "abos_count": abos_count,
+        }
+    finally:
+        conn.close()
+
+
+# =============================================================================
+# MOTEUR DE DÉTECTION D'ABONNEMENTS (analyse de transactions CSV)
+# =============================================================================
+
+
+def detect_subscriptions_from_transactions(
+    transactions: list[dict],
+) -> list[dict]:
+    """Analyse une liste de transactions CSV pour detecter des abonnements.
+
+    Args:
+        transactions: liste de dicts avec 'description', 'montant', 'date'
+
+    Returns:
+        liste de dicts avec les abonnements detectes:
+            {name, amount, frequency, billing_day, last_detected, confidence}
+    """
+    from collections import defaultdict
+    from datetime import datetime
+    import re
+
+    # 1. Normaliser les libellés : extraire le nom court
+    def normalize(name: str) -> str:
+        n = name.strip().upper()
+        # Enlever les suffixes type prélèvement, carte, etc.
+        n = re.sub(r'\b(PRELEVEMENT|SEPA|CARTE|PAIEMENT|CB|DIRECT DEBIT)\b', '', n)
+        n = re.sub(r'\b\d{2}/\d{2}\b', '', n)  # dates
+        n = re.sub(r'\b\d{4}\b', '', n)  # années
+        n = re.sub(r'\s+', ' ', n).strip()
+        # Prendre les 3-4 premiers mots significatifs
+        parts = n.split()
+        if len(parts) > 4:
+            n = ' '.join(parts[:4])
+        return n.strip().rstrip('*').strip()
+
+    # 2. Grouper par libellé normalisé
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for tx in transactions:
+        key = normalize(str(tx.get("description", "")))
+        if key and len(key) > 2:
+            groups[key].append(tx)
+
+    # 3. Analyser chaque groupe
+    detected = []
+    for raw_name, txs in groups.items():
+        if len(txs) < 2:
+            continue  # besoin d'au moins 2 occurrences
+
+        # Trier par date
+        txs_sorted = sorted(
+            txs,
+            key=lambda t: str(t.get("date", "")),
+        )
+
+        # Verifier que les montants sont coherents (marge 5%)
+        montants = [abs(float(t.get("montant", 0))) for t in txs_sorted]
+        montant_moyen = sum(montants) / len(montants)
+
+        # Ecart-type relatif < 10% = montant stable
+        if max(montants) - min(montants) > montant_moyen * 0.15:
+            continue  # trop variable, pas un abonnement
+
+        amount = round(montant_moyen, 2)
+
+        # Analyser les intervalles entre dates
+        dates = sorted(set(
+            str(t.get("date", "")) for t in txs_sorted if t.get("date")
+        ))
+
+        if len(dates) < 2:
+            continue
+
+        # Calculer les ecarts en jours
+        intervals = []
+        for i in range(1, len(dates)):
+            try:
+                d1 = datetime.strptime(dates[i - 1][:10], "%Y-%m-%d")
+                d2 = datetime.strptime(dates[i][:10], "%Y-%m-%d")
+                intervals.append((d2 - d1).days)
+            except (ValueError, IndexError):
+                continue
+
+        if not intervals:
+            continue
+
+        interval_moyen = sum(intervals) / len(intervals)
+
+        # Determiner la frequence
+        if 25 <= interval_moyen <= 35:
+            frequency = "monthly"
+            billing_day = int(dates[-1][8:10]) if dates[-1][8:10].isdigit() else 1
+        elif 355 <= interval_moyen <= 375:
+            frequency = "yearly"
+            billing_day = int(dates[-1][8:10]) if dates[-1][8:10].isdigit() else 1
+        elif 7 <= interval_moyen <= 8:
+            frequency = "weekly"
+            billing_day = int(dates[-1][8:10]) if dates[-1][8:10].isdigit() else 1
+        else:
+            continue  # pas un pattern reconnu
+
+        detected.append({
+            "name": raw_name.title(),
+            "amount": amount,
+            "frequency": frequency,
+            "billing_day": min(billing_day, 28),  # safe
+            "last_detected": dates[-1],
+            "confidence": round(
+                (1 - (max(montants) - min(montants)) / montant_moyen / 2) * 100
+                if montant_moyen > 0 else 50
+            ),
+        })
+
+    return detected

@@ -15,8 +15,8 @@ render_sidebar("5_Import_Revolut")
 
 st.title("💳 Import Revolut")
 
-tab_csv, tab_regles, tab_api = st.tabs(
-    ["📄 Import CSV", "🏷️ Règles de catégorisation", "🔌 API Business"]
+tab_csv, tab_abo, tab_regles, tab_api = st.tabs(
+    ["📄 Import CSV", "🤖 Détection abonnements", "🏷️ Règles de catégorisation", "🔌 API Business"]
 )
 
 # =============================================================================
@@ -109,6 +109,120 @@ with tab_csv:
                         f"✅ Import terminé : {ajoutes} ajoutée(s), "
                         f"{doublons} doublon(s) ignoré(s)."
                     )
+
+# =============================================================================
+# DÉTECTION D'ABONNEMENTS (CSV)
+# =============================================================================
+with tab_abo:
+    st.markdown("### 🤖 Détection automatique d'abonnements")
+    st.caption(
+        "Importe un fichier CSV Revolut pour détecter les abonnements récurrents "
+        "par analyse des libellés et des intervalles de temps entre transactions."
+    )
+
+    fichier_abo = st.file_uploader(
+        "Fichier CSV Revolut (détection abonnements)",
+        type=["csv"],
+        key="abo_uploader",
+    )
+
+    if fichier_abo is not None:
+        regles = models.get_regles()
+        try:
+            df_abo = revolut.parser_csv(fichier_abo.getvalue(), regles)
+        except ValueError as e:
+            st.error(f"❌ {e}")
+            df_abo = None
+
+        if df_abo is not None and not df_abo.empty:
+            # Construire la liste des transactions pour le moteur de détection
+            transactions = []
+            for _, row in df_abo.iterrows():
+                transactions.append({
+                    "description": row.get("description", ""),
+                    "montant": float(row.get("montant", 0)),
+                    "date": str(row.get("date", "")),
+                })
+
+            detected = models.detect_subscriptions_from_transactions(transactions)
+
+            if not detected:
+                st.info(
+                    "📭 Aucun abonnement récurrent détecté dans ce fichier. "
+                    "Il faut au moins 2 occurrences du même libellé avec un "
+                    "montant similaire à ~30 jours d'intervalle."
+                )
+            else:
+                st.success(f"🔍 {len(detected)} abonnement(s) potentiel(s) détecté(s) !")
+
+                st.markdown("**Abonnements détectés — cochés ceux à ajouter :**")
+                selected = []
+                for i, abo in enumerate(detected):
+                    freq_label = {
+                        "monthly": "Mensuel",
+                        "yearly": "Annuel",
+                        "weekly": "Hebdomadaire",
+                    }.get(abo["frequency"], abo["frequency"])
+
+                    col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
+                    with col1:
+                        checked = st.checkbox(
+                            f"**{abo['name']}**",
+                            value=True,
+                            key=f"abo_detect_{i}",
+                        )
+                    with col2:
+                        st.markdown(f"`{abo['amount']:.2f} €`")
+                    with col3:
+                        st.markdown(f"_{freq_label}_")
+                    with col4:
+                        st.markdown(f"Jour {abo['billing_day']}")
+                    with col5:
+                        conf = abo["confidence"]
+                        color = "#10B981" if conf >= 80 else "#F59E0B" if conf >= 60 else "#F43F5E"
+                        st.markdown(
+                            f"<span style='color:{color};font-weight:700;'>{conf}%</span>",
+                            unsafe_allow_html=True,
+                        )
+                    if checked:
+                        selected.append(abo)
+
+                if selected and st.button(
+                    "✅ Ajouter les abonnements sélectionnés au calendrier",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    from datetime import datetime
+
+                    ajoutes = 0
+                    for abo in selected:
+                        # Vérifier si déjà existant
+                        existants = models.get_subscriptions_list()
+                        deja_present = any(
+                            s["name"].upper() == abo["name"].upper()
+                            for s in existants
+                        )
+                        if not deja_present:
+                            models.add_subscription(
+                                name=abo["name"],
+                                amount=abo["amount"],
+                                frequency=abo["frequency"],
+                                billing_day=abo["billing_day"],
+                                category="Abonnements logiciels",
+                                last_detected=abo["last_detected"],
+                                is_manual=False,
+                            )
+                            ajoutes += 1
+
+                    if ajoutes > 0:
+                        today = datetime.now()
+                        models.generate_planned_expenses(today.year)
+                        st.success(
+                            f"✅ {ajoutes} abonnement(s) ajouté(s) au calendrier ! "
+                            f"Va voir la page **📅 Calendrier** pour les visualiser."
+                        )
+                    else:
+                        st.info("Tous ces abonnements étaient déjà enregistrés.")
 
 # =============================================================================
 # RÈGLES DE CATÉGORISATION

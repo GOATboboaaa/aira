@@ -43,11 +43,12 @@ st.markdown(
 )
 
 # ─── Cartes de navigation rapide ─────────────────────────────────────────────
-cols = st.columns(4, gap="large")
+cols = st.columns(5, gap="medium")
 cards = [
     ("📊", "Dashboard", "Vue d'ensemble économique", "1_Dashboard"),
     ("🎬", "Projets", "Facturation et suivi des paiements", "2_Projets"),
     ("🧾", "Dépenses", "Suivi des dépenses réelles", "3_Depenses"),
+    ("📅", "Calendrier", "Abonnements et prévisions", "6_Calendrier"),
     ("💰", "Fiscalité", "URSSAF, IR et seuils", "4_Fiscalite"),
 ]
 for col, (icon, title, desc, page) in zip(cols, cards):

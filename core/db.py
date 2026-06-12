@@ -74,6 +74,29 @@ CREATE TABLE IF NOT EXISTS regles_categorisation (
 -- Index anti-doublon pour l'import Revolut (les refs NULL ne sont pas contraintes)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_depenses_revolut_ref
     ON depenses(revolut_ref) WHERE revolut_ref IS NOT NULL;
+
+-- Abonnements / dépenses récurrentes
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    amount          REAL NOT NULL,
+    frequency       TEXT NOT NULL CHECK(frequency IN ('monthly','yearly','weekly')),
+    billing_day     INTEGER NOT NULL CHECK(billing_day BETWEEN 1 AND 31),
+    category        TEXT NOT NULL DEFAULT 'Abonnements logiciels',
+    last_detected   TEXT,
+    is_manual       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS planned_expenses (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    subscription_id INTEGER,
+    name            TEXT NOT NULL,
+    amount          REAL NOT NULL,
+    due_date        TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'predicted' CHECK(status IN ('predicted','paid')),
+    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL
+);
 """
 
 

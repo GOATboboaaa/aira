@@ -124,6 +124,7 @@ def render_sidebar(page_title: str | None = None):
         ("📊 Dashboard", "1_Dashboard"),
         ("🎬 Projets", "2_Projets"),
         ("🧾 Dépenses", "3_Depenses"),
+        ("📅 Calendrier", "6_Calendrier"),
         ("💰 Fiscalité", "4_Fiscalite"),
         ("💳 Import Revolut", "5_Import_Revolut"),
     ]
