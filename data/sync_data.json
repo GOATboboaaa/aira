@@ -1,1 +1,15 @@
-[]
+[
+  {
+    "id": "dep_20260612_d7b96c94",
+    "user_email": "couedelliam@gmail.com",
+    "table": "depenses",
+    "data": {
+      "date": "2026-06-12",
+      "montant": -1.1,
+      "categorie": "Alimentation",
+      "description": "Baguette de pain",
+      "moyen_paiement": "Especes",
+      "source": "sync"
+    }
+  }
+]
