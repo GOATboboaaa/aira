@@ -69,8 +69,8 @@ CREATE TABLE IF NOT EXISTS depenses (
 );
 
 CREATE TABLE IF NOT EXISTS config_fiscale (
-    id                      INTEGER PRIMARY KEY CHECK (id = 1),
-    user_id                 INTEGER NOT NULL DEFAULT 0,
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                 INTEGER NOT NULL UNIQUE,
     type_activite           TEXT NOT NULL DEFAULT 'BNC',
     versement_liberatoire   INTEGER NOT NULL DEFAULT 1,
     acre                    INTEGER NOT NULL DEFAULT 0,
@@ -125,8 +125,6 @@ CREATE TABLE IF NOT EXISTS planned_expenses (
 
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     """Ajoute les colonnes manquantes pour les bases existantes (upgrade)."""
-    import re
-
     # Récupère les colonnes existantes de chaque table
     existing_cols = {}
     tables = [
@@ -146,24 +144,63 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
                 f"ALTER TABLE {t} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0"
             )
 
-    # S'assurer que planned_expenses a bien ON DELETE CASCADE sur subscription_id
-    # SQLite ne permet pas ALTER CONSTRAINT, donc on vérifie et avertit si besoin.
-    # Pour les nouvelles créations, le CASCADE est dans le CREATE TABLE.
+    # ═══ Migration config_fiscale : ancien schéma CHECK(id=1) → per-user ═══
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type='table' AND name='config_fiscale'"
+    ).fetchone()
+    if row and "CHECK (id = 1)" in row["sql"]:
+        # Ancien schéma détecté — migrer les données
+        conn.execute("ALTER TABLE config_fiscale RENAME TO config_fiscale_old")
+        # Le nouveau schéma est déjà créé par executescript + IF NOT EXISTS,
+        # mais comme l'ancienne table existait, IF NOT EXISTS ne l'a pas re-créée.
+        # On la crée explicitement ici.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS config_fiscale (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id                 INTEGER NOT NULL UNIQUE,
+                type_activite           TEXT NOT NULL DEFAULT 'BNC',
+                versement_liberatoire   INTEGER NOT NULL DEFAULT 1,
+                acre                    INTEGER NOT NULL DEFAULT 0,
+                date_debut_activite     TEXT,
+                taux_urssaf             REAL NOT NULL,
+                taux_ir                 REAL NOT NULL,
+                annee_reference         INTEGER NOT NULL DEFAULT 2025,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        # Copier les données de l'ancienne table
+        rows_old = conn.execute(
+            "SELECT * FROM config_fiscale_old"
+        ).fetchall()
+        for r in rows_old:
+            d = dict(r)
+            uid = d.get("user_id", 0)
+            if not uid or uid == 0:
+                # Données orphelines → ignorer, le premier user les adoptera
+                continue
+            try:
+                conn.execute(
+                    """INSERT OR IGNORE INTO config_fiscale
+                       (user_id, type_activite, versement_liberatoire, acre,
+                        date_debut_activite, taux_urssaf, taux_ir, annee_reference)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (uid, d["type_activite"], d["versement_liberatoire"],
+                     d["acre"], d.get("date_debut_activite"),
+                     d["taux_urssaf"], d["taux_ir"], d["annee_reference"]),
+                )
+            except Exception:
+                pass
+        conn.execute("DROP TABLE IF EXISTS config_fiscale_old")
+        conn.commit()
 
 
 def init_db() -> None:
-    """Cree le schema et injecte les donnees par defaut si necessaire."""
+    """Cree le schema et applique les migrations si necessaire."""
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
         _migrate_schema(conn)
-
-        # Seed de la config fiscale (une seule ligne par user — id=1 est temporaire)
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM users"
-        ).fetchone()
-        has_users = row["n"] > 0 if row else False
-
         conn.commit()
     finally:
         conn.close()
