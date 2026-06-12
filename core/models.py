@@ -11,6 +11,7 @@ from typing import Optional
 
 import pandas as pd
 
+from core.auth import get_current_user_id
 from core.db import get_connection
 
 # =============================================================================
@@ -18,11 +19,38 @@ from core.db import get_connection
 # =============================================================================
 
 
-def get_config() -> dict:
-    """Retourne la configuration fiscale (ligne unique id=1)."""
+def _uid() -> int:
+    """Retourne le user_id courant, ou 0 si pas connecté (fallback)."""
+    uid = get_current_user_id()
+    return uid if uid is not None else 0
+
+
+def get_config(uid: int | None = None) -> dict:
+    """Retourne la configuration fiscale pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM config_fiscale WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM config_fiscale WHERE user_id = ? LIMIT 1",
+            (uid,),
+        ).fetchone()
+        if row:
+            return dict(row)
+        # Seed auto si pas de config
+        from config import taux
+        conn.execute(
+            """INSERT INTO config_fiscale
+               (user_id, type_activite, versement_liberatoire, acre,
+                taux_urssaf, taux_ir, annee_reference)
+               VALUES (?, 'BNC', 1, 0, ?, ?, 2025)""",
+            (uid, taux.TAUX_URSSAF_DEFAUT, taux.TAUX_IR_DEFAUT),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM config_fiscale WHERE user_id = ? LIMIT 1",
+            (uid,),
+        ).fetchone()
         return dict(row) if row else {}
     finally:
         conn.close()
@@ -36,7 +64,10 @@ def update_config(
     taux_ir: float,
     annee_reference: int,
     date_debut_activite: Optional[str] = None,
+    uid: int | None = None,
 ) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
@@ -49,7 +80,7 @@ def update_config(
                 taux_ir = ?,
                 annee_reference = ?,
                 date_debut_activite = ?
-            WHERE id = 1
+            WHERE user_id = ?
             """,
             (
                 type_activite,
@@ -59,6 +90,7 @@ def update_config(
                 taux_ir,
                 annee_reference,
                 date_debut_activite,
+                uid,
             ),
         )
         conn.commit()
@@ -79,61 +111,74 @@ def add_projet(
     statut: str = "En attente",
     date_encaiss: Optional[str] = None,
     notes: Optional[str] = None,
+    uid: int | None = None,
 ) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
             """
             INSERT INTO projets
-                (client, projet, tarif, date_facture, date_encaiss, statut, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (user_id, client, projet, tarif, date_facture, date_encaiss, statut, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (client, projet, tarif, date_facture, date_encaiss, statut, notes),
+            (uid, client, projet, tarif, date_facture, date_encaiss, statut, notes),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def get_projets(annee: Optional[int] = None) -> pd.DataFrame:
+def get_projets(annee: Optional[int] = None, uid: int | None = None) -> pd.DataFrame:
     """Retourne les projets, eventuellement filtres par annee de facturation."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         if annee:
             query = (
                 "SELECT * FROM projets "
-                "WHERE strftime('%Y', date_facture) = ? "
+                "WHERE user_id = ? AND strftime('%Y', date_facture) = ? "
                 "ORDER BY date_facture DESC"
             )
-            df = pd.read_sql_query(query, conn, params=(str(annee),))
+            df = pd.read_sql_query(query, conn, params=(uid, str(annee)))
         else:
             df = pd.read_sql_query(
-                "SELECT * FROM projets ORDER BY date_facture DESC", conn
+                "SELECT * FROM projets WHERE user_id = ? ORDER BY date_facture DESC",
+                conn, params=(uid,),
             )
         return df
     finally:
         conn.close()
 
 
-def update_projet(projet_id: int, **fields) -> None:
+def update_projet(projet_id: int, uid: int | None = None, **fields) -> None:
+    if uid is None:
+        uid = _uid()
     if not fields:
         return
     cols = ", ".join(f"{k} = ?" for k in fields)
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE projets SET {cols} WHERE id = ?",
-            (*fields.values(), projet_id),
+            f"UPDATE projets SET {cols} WHERE id = ? AND user_id = ?",
+            (*fields.values(), projet_id, uid),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def delete_projet(projet_id: int) -> None:
+def delete_projet(projet_id: int, uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM projets WHERE id = ?", (projet_id,))
+        conn.execute(
+            "DELETE FROM projets WHERE id = ? AND user_id = ?",
+            (projet_id, uid),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -152,72 +197,81 @@ def add_depense(
     moyen_paiement: Optional[str] = None,
     source: str = "manuel",
     revolut_ref: Optional[str] = None,
+    uid: int | None = None,
 ) -> bool:
     """Ajoute une depense. Retourne False si doublon Revolut (ref existante)."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
             """
             INSERT INTO depenses
-                (date, montant, categorie, description, moyen_paiement,
+                (user_id, date, montant, categorie, description, moyen_paiement,
                  source, revolut_ref)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                date,
-                montant,
-                categorie,
-                description,
-                moyen_paiement,
-                source,
-                revolut_ref,
+                uid, date, montant, categorie, description,
+                moyen_paiement, source, revolut_ref,
             ),
         )
         conn.commit()
         return True
     except Exception:
-        # Violation de l'index unique (doublon revolut_ref)
         return False
     finally:
         conn.close()
 
 
-def get_depenses(annee: Optional[int] = None) -> pd.DataFrame:
+def get_depenses(annee: Optional[int] = None, uid: int | None = None) -> pd.DataFrame:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         if annee:
             query = (
                 "SELECT * FROM depenses "
-                "WHERE strftime('%Y', date) = ? "
+                "WHERE user_id = ? AND strftime('%Y', date) = ? "
                 "ORDER BY date DESC"
             )
-            df = pd.read_sql_query(query, conn, params=(str(annee),))
+            df = pd.read_sql_query(query, conn, params=(uid, str(annee)))
         else:
-            df = pd.read_sql_query("SELECT * FROM depenses ORDER BY date DESC", conn)
+            df = pd.read_sql_query(
+                "SELECT * FROM depenses WHERE user_id = ? ORDER BY date DESC",
+                conn, params=(uid,),
+            )
         return df
     finally:
         conn.close()
 
 
-def update_depense(depense_id: int, **fields) -> None:
+def update_depense(depense_id: int, uid: int | None = None, **fields) -> None:
+    if uid is None:
+        uid = _uid()
     if not fields:
         return
     cols = ", ".join(f"{k} = ?" for k in fields)
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE depenses SET {cols} WHERE id = ?",
-            (*fields.values(), depense_id),
+            f"UPDATE depenses SET {cols} WHERE id = ? AND user_id = ?",
+            (*fields.values(), depense_id, uid),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def delete_depense(depense_id: int) -> None:
+def delete_depense(depense_id: int, uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM depenses WHERE id = ?", (depense_id,))
+        conn.execute(
+            "DELETE FROM depenses WHERE id = ? AND user_id = ?",
+            (depense_id, uid),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -228,34 +282,45 @@ def delete_depense(depense_id: int) -> None:
 # =============================================================================
 
 
-def get_regles() -> list[dict]:
+def get_regles(uid: int | None = None) -> list[dict]:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM regles_categorisation ORDER BY motif"
+            "SELECT * FROM regles_categorisation WHERE user_id = ? ORDER BY motif",
+            (uid,),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def add_regle(motif: str, categorie: str, type_: str = "depense") -> None:
+def add_regle(motif: str, categorie: str, type_: str = "depense",
+              uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO regles_categorisation (motif, categorie, type) "
-            "VALUES (?, ?, ?)",
-            (motif.upper(), categorie, type_),
+            "INSERT INTO regles_categorisation (user_id, motif, categorie, type) "
+            "VALUES (?, ?, ?, ?)",
+            (uid, motif.upper(), categorie, type_),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def delete_regle(regle_id: int) -> None:
+def delete_regle(regle_id: int, uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM regles_categorisation WHERE id = ?", (regle_id,))
+        conn.execute(
+            "DELETE FROM regles_categorisation WHERE id = ? AND user_id = ?",
+            (regle_id, uid),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -266,100 +331,112 @@ def delete_regle(regle_id: int) -> None:
 # =============================================================================
 
 
-def ca_encaisse(annee: int) -> float:
-    """
-    CA reellement encaisse sur l'annee = somme des tarifs des projets
-    marques 'Paye' (avec date d'encaissement dans l'annee).
-    C'est l'assiette des cotisations en micro-entreprise.
-    """
+def ca_encaisse(annee: int, uid: int | None = None) -> float:
+    """CA reellement encaisse sur l'annee pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         row = conn.execute(
             """
             SELECT COALESCE(SUM(tarif), 0) AS total
             FROM projets
-            WHERE statut = 'Paye'
+            WHERE user_id = ?
+              AND statut = 'Paye'
               AND date_encaiss IS NOT NULL
               AND strftime('%Y', date_encaiss) = ?
             """,
-            (str(annee),),
+            (uid, str(annee)),
         ).fetchone()
         return float(row["total"])
     finally:
         conn.close()
 
 
-def ca_facture(annee: int) -> float:
-    """CA brut facture sur l'annee (paye + en attente), base date de facture."""
+def ca_facture(annee: int, uid: int | None = None) -> float:
+    """CA brut facture sur l'annee pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         row = conn.execute(
             """
             SELECT COALESCE(SUM(tarif), 0) AS total
             FROM projets
-            WHERE strftime('%Y', date_facture) = ?
-            """,
-            (str(annee),),
-        ).fetchone()
-        return float(row["total"])
-    finally:
-        conn.close()
-
-
-def ca_en_attente(annee: int) -> float:
-    """Montant facture mais non encore encaisse (statut En attente)."""
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            """
-            SELECT COALESCE(SUM(tarif), 0) AS total
-            FROM projets
-            WHERE statut = 'En attente'
+            WHERE user_id = ?
               AND strftime('%Y', date_facture) = ?
             """,
-            (str(annee),),
+            (uid, str(annee)),
         ).fetchone()
         return float(row["total"])
     finally:
         conn.close()
 
 
-def total_depenses(annee: int) -> float:
+def ca_en_attente(annee: int, uid: int | None = None) -> float:
+    """Montant facture mais non encore encaisse pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(tarif), 0) AS total
+            FROM projets
+            WHERE user_id = ?
+              AND statut = 'En attente'
+              AND strftime('%Y', date_facture) = ?
+            """,
+            (uid, str(annee)),
+        ).fetchone()
+        return float(row["total"])
+    finally:
+        conn.close()
+
+
+def total_depenses(annee: int, uid: int | None = None) -> float:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         row = conn.execute(
             """
             SELECT COALESCE(SUM(montant), 0) AS total
             FROM depenses
-            WHERE strftime('%Y', date) = ?
+            WHERE user_id = ?
+              AND strftime('%Y', date) = ?
             """,
-            (str(annee),),
+            (uid, str(annee)),
         ).fetchone()
         return float(row["total"])
     finally:
         conn.close()
 
 
-def depenses_par_categorie(annee: int) -> pd.DataFrame:
+def depenses_par_categorie(annee: int, uid: int | None = None) -> pd.DataFrame:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         return pd.read_sql_query(
             """
             SELECT categorie, COALESCE(SUM(montant), 0) AS total
             FROM depenses
-            WHERE strftime('%Y', date) = ?
+            WHERE user_id = ? AND strftime('%Y', date) = ?
             GROUP BY categorie
             ORDER BY total DESC
             """,
             conn,
-            params=(str(annee),),
+            params=(uid, str(annee)),
         )
     finally:
         conn.close()
 
 
-def ca_mensuel(annee: int) -> pd.DataFrame:
-    """CA encaisse agrege par mois (pour le graphe du dashboard)."""
+def ca_mensuel(annee: int, uid: int | None = None) -> pd.DataFrame:
+    """CA encaisse agrege par mois pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         return pd.read_sql_query(
@@ -367,29 +444,33 @@ def ca_mensuel(annee: int) -> pd.DataFrame:
             SELECT strftime('%Y-%m', date_encaiss) AS mois,
                    COALESCE(SUM(tarif), 0) AS ca
             FROM projets
-            WHERE statut = 'Paye'
+            WHERE user_id = ?
+              AND statut = 'Paye'
               AND date_encaiss IS NOT NULL
               AND strftime('%Y', date_encaiss) = ?
             GROUP BY mois
             ORDER BY mois
             """,
             conn,
-            params=(str(annee),),
+            params=(uid, str(annee)),
         )
     finally:
         conn.close()
 
 
-def annees_disponibles() -> list[int]:
-    """Liste des annees presentes en base (projets ou depenses)."""
+def annees_disponibles(uid: int | None = None) -> list[int]:
+    """Liste des annees presentes en base pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         rows = conn.execute(
             """
-            SELECT strftime('%Y', date_facture) AS a FROM projets
+            SELECT strftime('%Y', date_facture) AS a FROM projets WHERE user_id = ?
             UNION
-            SELECT strftime('%Y', date) AS a FROM depenses
-            """
+            SELECT strftime('%Y', date) AS a FROM depenses WHERE user_id = ?
+            """,
+            (uid, uid),
         ).fetchall()
         annees = sorted({int(r["a"]) for r in rows if r["a"]}, reverse=True)
         return annees
@@ -410,14 +491,17 @@ def add_subscription(
     category: str = "Abonnements logiciels",
     last_detected: str | None = None,
     is_manual: bool = True,
+    uid: int | None = None,
 ) -> int:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         cur = conn.execute(
             """INSERT INTO subscriptions
-               (name, amount, frequency, billing_day, category, last_detected, is_manual)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, amount, frequency, billing_day, category, last_detected,
+               (user_id, name, amount, frequency, billing_day, category, last_detected, is_manual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (uid, name, amount, frequency, billing_day, category, last_detected,
              1 if is_manual else 0),
         )
         conn.commit()
@@ -426,47 +510,62 @@ def add_subscription(
         conn.close()
 
 
-def get_subscriptions() -> pd.DataFrame:
+def get_subscriptions(uid: int | None = None) -> pd.DataFrame:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         return pd.read_sql_query(
-            "SELECT * FROM subscriptions ORDER BY name", conn
+            "SELECT * FROM subscriptions WHERE user_id = ? ORDER BY name",
+            conn, params=(uid,),
         )
     finally:
         conn.close()
 
 
-def get_subscriptions_list() -> list[dict]:
+def get_subscriptions_list(uid: int | None = None) -> list[dict]:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM subscriptions ORDER BY name"
+            "SELECT * FROM subscriptions WHERE user_id = ? ORDER BY name",
+            (uid,),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def update_subscription(sub_id: int, **fields) -> None:
+def update_subscription(sub_id: int, uid: int | None = None, **fields) -> None:
+    if uid is None:
+        uid = _uid()
     if not fields:
         return
     cols = ", ".join(f"{k} = ?" for k in fields)
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE subscriptions SET {cols} WHERE id = ?",
-            (*fields.values(), sub_id),
+            f"UPDATE subscriptions SET {cols} WHERE id = ? AND user_id = ?",
+            (*fields.values(), sub_id, uid),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def delete_subscription(sub_id: int) -> None:
+def delete_subscription(sub_id: int, uid: int | None = None) -> None:
+    """Supprime un abonnement et cascade automatiquement sur ses planned_expenses."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM subscriptions WHERE id = ?", (sub_id,))
+        cur = conn.execute(
+            "DELETE FROM subscriptions WHERE id = ? AND user_id = ?",
+            (sub_id, uid),
+        )
         conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 
@@ -479,13 +578,16 @@ def delete_subscription(sub_id: int) -> None:
 def generate_planned_expenses(
     year: int,
     month: int | None = None,
+    uid: int | None = None,
 ) -> None:
-    """Generer (ou met a jour) les depenses planifiees pour chaque abonnement actif
-    sur la periode donnee. Si month est None, genere pour toute l annee."""
+    """Generer (ou met a jour) les depenses planifiees pour chaque abonnement actif."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         subs = conn.execute(
-            "SELECT * FROM subscriptions"
+            "SELECT * FROM subscriptions WHERE user_id = ?",
+            (uid,),
         ).fetchall()
 
         import calendar
@@ -499,16 +601,16 @@ def generate_planned_expenses(
 
                 existing = conn.execute(
                     "SELECT id FROM planned_expenses "
-                    "WHERE subscription_id = ? AND due_date = ?",
-                    (sub["id"], due_date),
+                    "WHERE user_id = ? AND subscription_id = ? AND due_date = ?",
+                    (uid, sub["id"], due_date),
                 ).fetchone()
 
                 if not existing:
                     conn.execute(
                         """INSERT INTO planned_expenses
-                           (subscription_id, name, amount, due_date, status)
-                           VALUES (?, ?, ?, ?, 'predicted')""",
-                        (sub["id"], sub["name"], sub["amount"], due_date),
+                           (user_id, subscription_id, name, amount, due_date, status)
+                           VALUES (?, ?, ?, ?, ?, 'predicted')""",
+                        (uid, sub["id"], sub["name"], sub["amount"], due_date),
                     )
 
         conn.commit()
@@ -519,8 +621,11 @@ def generate_planned_expenses(
 def get_planned_expenses(
     year: int,
     month: int | None = None,
+    uid: int | None = None,
 ) -> pd.DataFrame:
-    """Retourne les depenses planifiees pour un mois donne (ou toute l annee)."""
+    """Retourne les depenses planifiees pour un mois donne."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         if month:
@@ -528,76 +633,89 @@ def get_planned_expenses(
                 "SELECT pe.*, s.frequency, s.is_manual, s.category "
                 "FROM planned_expenses pe "
                 "LEFT JOIN subscriptions s ON pe.subscription_id = s.id "
-                "WHERE strftime('%Y', pe.due_date) = ? "
+                "WHERE pe.user_id = ? "
+                "AND strftime('%Y', pe.due_date) = ? "
                 "AND strftime('%m', pe.due_date) = ? "
                 "ORDER BY pe.due_date ASC"
             )
             df = pd.read_sql_query(
-                query, conn, params=(str(year), f"{month:02d}")
+                query, conn, params=(uid, str(year), f"{month:02d}")
             )
         else:
             query = (
                 "SELECT pe.*, s.frequency, s.is_manual, s.category "
                 "FROM planned_expenses pe "
                 "LEFT JOIN subscriptions s ON pe.subscription_id = s.id "
-                "WHERE strftime('%Y', pe.due_date) = ? "
+                "WHERE pe.user_id = ? "
+                "AND strftime('%Y', pe.due_date) = ? "
                 "ORDER BY pe.due_date ASC"
             )
-            df = pd.read_sql_query(query, conn, params=(str(year),))
+            df = pd.read_sql_query(query, conn, params=(uid, str(year)))
         return df
     finally:
         conn.close()
 
 
-def mark_planned_paid(expense_id: int) -> None:
+def mark_planned_paid(expense_id: int, uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE planned_expenses SET status = 'paid' WHERE id = ?",
-            (expense_id,),
+            "UPDATE planned_expenses SET status = 'paid' "
+            "WHERE id = ? AND user_id = ?",
+            (expense_id, uid),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def delete_planned_expense(expense_id: int) -> None:
+def delete_planned_expense(expense_id: int, uid: int | None = None) -> None:
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         conn.execute(
-            "DELETE FROM planned_expenses WHERE id = ?", (expense_id,)
+            "DELETE FROM planned_expenses WHERE id = ? AND user_id = ?",
+            (expense_id, uid),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def get_calendar_cashflow(year: int, month: int) -> dict:
-    """Calcule le resume financier du mois : total abonnements, etc."""
+def get_calendar_cashflow(year: int, month: int, uid: int | None = None) -> dict:
+    """Calcule le resume financier du mois pour un utilisateur."""
+    if uid is None:
+        uid = _uid()
     conn = get_connection()
     try:
         row = conn.execute(
             """SELECT COALESCE(SUM(pe.amount), 0) AS total_predicted
                FROM planned_expenses pe
-               WHERE strftime('%Y', pe.due_date) = ?
+               WHERE pe.user_id = ?
+                 AND strftime('%Y', pe.due_date) = ?
                  AND strftime('%m', pe.due_date) = ?
                  AND pe.status = 'predicted'""",
-            (str(year), f"{month:02d}"),
+            (uid, str(year), f"{month:02d}"),
         ).fetchone()
         total_predicted = float(row["total_predicted"]) if row else 0.0
 
         row2 = conn.execute(
             """SELECT COALESCE(SUM(pe.amount), 0) AS total_paid
                FROM planned_expenses pe
-               WHERE strftime('%Y', pe.due_date) = ?
+               WHERE pe.user_id = ?
+                 AND strftime('%Y', pe.due_date) = ?
                  AND strftime('%m', pe.due_date) = ?
                  AND pe.status = 'paid'""",
-            (str(year), f"{month:02d}"),
+            (uid, str(year), f"{month:02d}"),
         ).fetchone()
         total_paid = float(row2["total_paid"]) if row2 else 0
 
         row3 = conn.execute(
-            "SELECT COUNT(*) AS n FROM subscriptions"
+            "SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = ?",
+            (uid,),
         ).fetchone()
         abos_count = row3["n"] if row3 else 0
 

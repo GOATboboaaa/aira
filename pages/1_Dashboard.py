@@ -1,4 +1,6 @@
-"""Page Dashboard Aira : vue d'ensemble économique premium."""
+"""
+Page Dashboard Aira : KPIs, waterfall, graphiques et rentabilite.
+"""
 
 from datetime import date
 from textwrap import shorten
@@ -7,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from core import models, fiscal
+from core import auth, models, fiscal
 from core.components import (
     kpi_card,
     section_header,
@@ -22,6 +24,7 @@ st.set_page_config(page_title="Aira — Dashboard", page_icon="✦", layout="wid
 init_db()
 inject()
 render_sidebar("1_Dashboard")
+auth.require_auth()
 
 config = models.get_config()
 annees = models.annees_disponibles() or [date.today().year]

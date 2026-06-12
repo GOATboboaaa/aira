@@ -1,10 +1,12 @@
-"""Page Fiscalité Aira : calcul URSSAF + IR et suivi des seuils."""
+"""
+Page Fiscalite Aira : parametres fiscaux, waterfall, seuils.
+"""
 
 from datetime import date
 
 import streamlit as st
 
-from core import models, fiscal
+from core import auth, models, fiscal
 from core.components import section_header, tax_waterfall, footer, render_sidebar
 from core.db import init_db
 from core.styles import inject
@@ -13,6 +15,7 @@ st.set_page_config(page_title="Aira — Fiscalité", page_icon="✦", layout="wi
 init_db()
 inject()
 render_sidebar("4_Fiscalite")
+auth.require_auth()
 
 st.title("💰 Fiscalité")
 

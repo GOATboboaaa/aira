@@ -1,8 +1,8 @@
-"""Page Import Revolut Aira : import CSV + règles de catégorisation + doc API."""
+"""Page Import Revolut Aira : import CSV + regles de categorisation + detection abonnements."""
 
 import streamlit as st
 
-from core import models, revolut
+from core import auth, models, revolut
 from core.components import footer, render_sidebar
 from core.db import init_db
 from core.styles import inject
@@ -12,6 +12,7 @@ st.set_page_config(page_title="Aira — Import Revolut", page_icon="✦", layout
 init_db()
 inject()
 render_sidebar("5_Import_Revolut")
+auth.require_auth()
 
 st.title("💳 Import Revolut")
 

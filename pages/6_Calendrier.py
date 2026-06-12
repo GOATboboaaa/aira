@@ -14,7 +14,7 @@ from datetime import date, datetime
 
 import streamlit as st
 
-from core import models
+from core import auth, models
 from core.components import footer, render_sidebar, page_header
 from core.db import init_db
 from core.styles import inject
@@ -23,6 +23,7 @@ st.set_page_config(page_title="Aira — Calendrier", page_icon="✦", layout="wi
 init_db()
 inject()
 render_sidebar("6_Calendrier")
+auth.require_auth()
 
 # ─── Gestion mois courant ───────────────────────────────────────────────────
 today = date.today()
@@ -317,15 +318,29 @@ with tab_liste:
         )
 
         # Supprimer un abonnement
+        st.markdown("**Supprimer un abonnement**")
         sub_choices = {f"{r['id']} — {r['name']} ({r['amount']:.2f}€)": r['id']
                        for r in subs}
-        sub_names = [""] + list(sub_choices.keys())
-        to_del = st.selectbox("Supprimer un abonnement", sub_names, key="del_sub")
-        if st.button("🗑 Supprimer", use_container_width=True) and to_del:
-            sid = sub_choices[to_del]
-            models.delete_subscription(sid)
-            st.success("✅ Abonnement supprimé.")
-            st.rerun()
+        sub_names = ["— Sélectionne un abonnement —"] + list(sub_choices.keys())
+        to_del = st.selectbox(
+            "Choisis l'abonnement à supprimer",
+            sub_names,
+            key="del_sub",
+        )
+        if st.button(
+            "🗑 Supprimer définitivement",
+            use_container_width=True,
+            type="primary",
+            disabled=(to_del == sub_names[0]),
+        ):
+            if to_del != sub_names[0]:
+                sid = sub_choices[to_del]
+                deleted = models.delete_subscription(sid)
+                if deleted:
+                    st.success("✅ Abonnement supprimé (ses occurrences dans le calendrier ont été retirées).")
+                else:
+                    st.warning("Abonnement introuvable — peut-être déjà supprimé.")
+                st.rerun()
 
         # Régénérer les planned_expenses
         if st.button("🔄 Régénérer les prévisions", use_container_width=True):

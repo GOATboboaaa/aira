@@ -1,11 +1,13 @@
-"""Page Projets Aira : facturation et suivi des paiements."""
+"""
+Page Projets Aira : gestion des projets, facturation et encaissements.
+"""
 
 from datetime import date
 
 import pandas as pd
 import streamlit as st
 
-from core import models
+from core import auth, models
 from core.components import section_header, footer, render_sidebar
 from core.db import init_db
 from core.styles import inject
@@ -14,6 +16,7 @@ st.set_page_config(page_title="Aira — Projets", page_icon="✦", layout="wide"
 init_db()
 inject()
 render_sidebar("2_Projets")
+auth.require_auth()
 
 st.title("🎬 Projets / Facturation")
 

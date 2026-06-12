@@ -116,10 +116,12 @@ def footer():
 
 
 def render_sidebar(page_title: str | None = None):
-    """Sidebar Aira partagé — logo, navigation, aperçu rapide.
+    """Sidebar Aira partage — logo, navigation, user info, apercu rapide.
 
-    À appeler au début de chaque page (après set_page_config).
+    A appeler au debut de chaque page (apres set_page_config).
     """
+    from core import auth as auth_mod
+
     pages = [
         ("📊 Dashboard", "1_Dashboard"),
         ("🎬 Projets", "2_Projets"),
@@ -141,6 +143,22 @@ def render_sidebar(page_title: str | None = None):
             </div>""",
             unsafe_allow_html=True,
         )
+
+        # ─── User info + Logout ────────────────────────────────────────────
+        user_email = auth_mod.get_current_user_email()
+        if user_email:
+            st.markdown(
+                f"""<div style="background:#14141E; border-radius:8px; padding:0.5rem 0.75rem;
+                            margin-bottom:1rem;">
+                    <div style="color:#94A3B8; font-size:0.65rem; text-transform:uppercase;
+                                letter-spacing:0.05em;">Connecte</div>
+                    <div style="color:#F1F5F9; font-size:0.8rem; font-weight:600;">{user_email}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            if st.button("🔒 Deconnexion", key="logout_btn", use_container_width=True):
+                auth_mod.logout_user()
+                st.switch_page("app.py")
 
         st.markdown("### Navigation")
         for label, page in pages:
