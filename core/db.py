@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     email           TEXT NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
+    reset_token     TEXT,
+    reset_token_expiry TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
 );
 
@@ -128,7 +130,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     # Récupère les colonnes existantes de chaque table
     existing_cols = {}
     tables = [
-        "projets", "depenses", "config_fiscale", "regles_categorisation",
+        "users", "projets", "depenses", "config_fiscale", "regles_categorisation",
         "subscriptions", "planned_expenses",
     ]
     for t in tables:

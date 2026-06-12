@@ -84,54 +84,188 @@ if auth.is_authenticated():
         st.markdown("**Total prelevements** : ~27,8 % du CA encaisse")
         st.markdown("**Conseil** : mets ce pourcentage de cote sur chaque encaissement.")
 else:
-    # ─── Login / Register ───────────────────────────────────────────────────
-    st.markdown("### 🔐 Connexion")
-    tab_login, tab_register = st.tabs(["Se connecter", "Creer un compte"])
+    # ─── Vues : Login, Forgot Password, Reset Password ─────────────────
+    # Detecter un reset_token dans l'URL (Streamlit 1.35+)
+    query = st.query_params
+    url_token = query.get("reset_token", [None])
+    if isinstance(url_token, list):
+        url_token = url_token[0] if url_token else None
 
-    with tab_login:
-        with st.form("login_form"):
-            email = st.text_input("Email", placeholder="ex: toi@email.com")
-            password = st.text_input("Mot de passe", type="password")
-            if st.form_submit_button("Se connecter", type="primary", use_container_width=True):
-                if not email or not password:
-                    st.error("Email et mot de passe obligatoires.")
-                else:
-                    ok, msg, user_id = auth.login_user(email, password)
-                    if ok:
-                        auth.set_session(user_id, email.strip().lower())
-                        st.success("✅ Connecte !")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {msg}")
+    if url_token:
+        st.session_state.auth_view = "reset"
+        st.session_state.reset_token = url_token
+        # Nettoyer l'URL pour eviter le re-jeu du token au refresh
+        query.clear()
+        st.query_params = query
 
-    with tab_register:
-        with st.form("register_form"):
-            email_r = st.text_input("Email", placeholder="ex: toi@email.com",
-                                    key="reg_email")
-            password_r = st.text_input(
-                "Mot de passe (min 6 caracteres)", type="password",
-                key="reg_pass"
+    # État par defaut
+    if "auth_view" not in st.session_state:
+        st.session_state.auth_view = "login"
+
+    current_view = st.session_state.auth_view
+
+    # ─── Vue : Forgot Password ────────────────────────────────────────
+    if current_view == "forgot":
+        st.markdown("### 🔐 Mot de passe oublie")
+        st.caption("Saisis ton email pour recevoir un lien de reinitialisation.")
+
+        with st.form("forgot_form"):
+            forgot_email = st.text_input(
+                "Email",
+                placeholder="ex: toi@email.com",
+                key="forgot_email",
             )
-            password_r2 = st.text_input(
-                "Confirmer le mot de passe", type="password",
-                key="reg_pass2"
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button(
+                    "📧 Envoyer le lien",
+                    type="primary",
+                    use_container_width=True,
+                )
+            with col2:
+                if st.form_submit_button("⬅️ Retour", use_container_width=True):
+                    st.session_state.auth_view = "login"
+                    st.rerun()
+
+        if submitted and forgot_email:
+            msg = auth.generate_password_reset(forgot_email)
+            st.success(msg)
+            st.info(
+                "💡 Sur Streamlit Cloud, le lien est affiche dans les logs "
+                "de l'application (console / stderr). "
+                "Va dans 'Manage app' → 'Logs' pour le trouver, "
+                "ou regarde le terminal si tu es en local."
             )
-            if st.form_submit_button("Creer mon compte", type="primary",
-                                     use_container_width=True):
-                if not email_r or not password_r:
-                    st.error("Tous les champs sont obligatoires.")
-                elif password_r != password_r2:
-                    st.error("Les mots de passe ne correspondent pas.")
-                else:
-                    ok, msg = auth.register_user(email_r, password_r)
-                    if ok:
-                        # Auto-login apres inscription
-                        _, _, uid = auth.login_user(email_r, password_r)
-                        if uid:
-                            auth.set_session(uid, email_r.strip().lower())
-                        st.success("✅ Compte cree ! Bienvenue sur Aira.")
-                        st.rerun()
+            # Afficher le lien directement pour le debug (uniquement local)
+            import sys
+            from io import StringIO
+            st.code(
+                f"# Le lien de reset a ete imprime dans les logs.\n"
+                f"# Copie le ?reset_token=... depuis l'URL ci-dessous\n"
+                f"# et ajoute-le a l'URL de l'app :\n"
+                f"# {auth.RESET_BASE_URL}?reset_token=TON_TOKEN",
+                language="text",
+            )
+
+    # ─── Vue : Reset Password ─────────────────────────────────────────
+    elif current_view == "reset":
+        token = st.session_state.get("reset_token", "")
+        # Verifier si le token est encore valide
+        user_id = auth.verify_reset_token(token)
+
+        if user_id is None:
+            st.error(
+                "❌ Lien invalide ou expire. "
+                "Fais une nouvelle demande de reinitialisation."
+            )
+            if st.button("⬅️ Retour à la connexion", use_container_width=True):
+                st.session_state.auth_view = "login"
+                st.query_params.clear()
+                st.rerun()
+        else:
+            st.markdown("### 🔐 Nouveau mot de passe")
+            st.caption("Choisis un nouveau mot de passe (min 6 caracteres).")
+
+            with st.form("reset_form"):
+                new_pass = st.text_input(
+                    "Nouveau mot de passe",
+                    type="password",
+                    placeholder="Min 6 caracteres",
+                    key="reset_new_pass",
+                )
+                new_pass2 = st.text_input(
+                    "Confirmer le mot de passe",
+                    type="password",
+                    key="reset_new_pass2",
+                )
+                if st.form_submit_button(
+                    "✅ Réinitialiser le mot de passe",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    if not new_pass:
+                        st.error("Mot de passe obligatoire.")
+                    elif new_pass != new_pass2:
+                        st.error("Les mots de passe ne correspondent pas.")
+                    elif len(new_pass) < 6:
+                        st.error("Mot de passe trop court (min 6 caracteres).")
                     else:
-                        st.error(f"❌ {msg}")
+                        ok, msg = auth.reset_password(token, new_pass)
+                        if ok:
+                            st.success(
+                                "✅ Mot de passe réinitialise ! "
+                                "Connecte-toi avec ton nouveau mot de passe."
+                            )
+                            # Nettoyer et revenir au login
+                            if "reset_token" in st.session_state:
+                                del st.session_state.reset_token
+                            st.session_state.auth_view = "login"
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
+
+    # ─── Vue : Login / Register (defaut) ──────────────────────────
+    else:
+        st.markdown("### 🔐 Connexion")
+        tab_login, tab_register = st.tabs(["Se connecter", "Creer un compte"])
+
+        with tab_login:
+            with st.form("login_form"):
+                email = st.text_input("Email", placeholder="ex: toi@email.com")
+                password = st.text_input("Mot de passe", type="password")
+                if st.form_submit_button("Se connecter", type="primary", use_container_width=True):
+                    if not email or not password:
+                        st.error("Email et mot de passe obligatoires.")
+                    else:
+                        ok, msg, user_id = auth.login_user(email, password)
+                        if ok:
+                            auth.set_session(user_id, email.strip().lower())
+                            st.success("✅ Connecte !")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
+            # Lien "Mot de passe oublie"
+            st.markdown(
+                f"<div style='text-align:center; margin-top:0.5rem;'>"
+                f"<a href='#' onclick='return false;' "
+                f"style='color:#A78BFA; font-size:0.85rem; "
+                f"text-decoration:none; cursor:pointer;' "
+                f"id='forgot-link'>"
+                f"Mot de passe oublie ?</a></div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("Mot de passe oublie ?", key="goto_forgot",
+                         use_container_width=True):
+                st.session_state.auth_view = "forgot"
+                st.rerun()
+
+        with tab_register:
+            with st.form("register_form"):
+                email_r = st.text_input("Email", placeholder="ex: toi@email.com",
+                                        key="reg_email")
+                password_r = st.text_input(
+                    "Mot de passe (min 6 caracteres)", type="password",
+                    key="reg_pass"
+                )
+                password_r2 = st.text_input(
+                    "Confirmer le mot de passe", type="password",
+                    key="reg_pass2"
+                )
+                if st.form_submit_button("Creer mon compte", type="primary",
+                                         use_container_width=True):
+                    if not email_r or not password_r:
+                        st.error("Tous les champs sont obligatoires.")
+                    elif password_r != password_r2:
+                        st.error("Les mots de passe ne correspondent pas.")
+                    else:
+                        ok, msg = auth.register_user(email_r, password_r)
+                        if ok:
+                            _, _, uid = auth.login_user(email_r, password_r)
+                            if uid:
+                                auth.set_session(uid, email_r.strip().lower())
+                            st.success("✅ Compte cree ! Bienvenue sur Aira.")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
 
 footer()
