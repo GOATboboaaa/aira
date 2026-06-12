@@ -420,6 +420,147 @@ def inject():
                 flex: 1 1 100% !important;
             }}
         }}
+
+        /* ═══════════════════════════════════════════════════════════════
+           AUTH UI — ANIMATIONS
+           ═══════════════════════════════════════════════════════════════ */
+
+        /* ─── Auth card container ─── */
+        .auth-card {{
+            max-width: 440px;
+            margin: 0 auto;
+            background: #1A1A24;
+            border: 1px solid #2A2A3A;
+            border-radius: 16px;
+            padding: 2rem 1.75rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            position: relative;
+            overflow: hidden;
+        }}
+        .auth-card::before {{
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #7C5CFC, #A78BFA, #7C5CFC);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+        }}
+
+        /* ─── Form slide/fade transitions ─── */
+        .auth-form {{
+            animation: fadeSlideIn 0.35s ease-out;
+        }}
+        .auth-form-exit {{
+            animation: fadeSlideOut 0.25s ease-in forwards;
+        }}
+
+        @keyframes fadeSlideIn {{
+            from {{
+                opacity: 0;
+                transform: translateX(24px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateX(0);
+            }}
+        }}
+        @keyframes fadeSlideOut {{
+            from {{
+                opacity: 1;
+                transform: translateX(0);
+            }}
+            to {{
+                opacity: 0;
+                transform: translateX(-24px);
+            }}
+        }}
+        @keyframes shimmer {{
+            0%, 100% {{ background-position: 200% 0; }}
+            50% {{ background-position: -200% 0; }}
+        }}
+
+        /* ─── Shake effect sur les erreurs ─── */
+        .auth-shake {{
+            animation: shake 0.4s ease-in-out;
+        }}
+        @keyframes shake {{
+            0%, 100% {{ transform: translateX(0); }}
+            20% {{ transform: translateX(-10px); }}
+            40% {{ transform: translateX(10px); }}
+            60% {{ transform: translateX(-8px); }}
+            80% {{ transform: translateX(8px); }}
+        }}
+
+        /* ─── Spinner loading ─── */
+        .auth-spinner {{
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top-color: #F1F5F9;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.4rem;
+        }}
+        @keyframes spin {{
+            to {{ transform: rotate(360deg); }}
+        }}
+
+        /* ─── Bouton submit avec animation ─── */
+        .auth-btn {{
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }}
+        .auth-btn:hover {{
+            transform: scale(1.02);
+            box-shadow: 0 6px 20px rgba(124, 92, 252, 0.35);
+        }}
+        .auth-btn:active {{
+            transform: scale(0.98);
+        }}
+        .auth-btn:disabled {{
+            opacity: 0.7;
+            transform: scale(0.98);
+        }}
+
+        /* ─── Input focus glow ─── */
+        .auth-input {{
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }}
+        .auth-input:focus {{
+            border-color: #7C5CFC !important;
+            box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15) !important;
+        }}
+
+        /* ─── Success toast animation ─── */
+        .auth-toast {{
+            animation: toastIn 0.3s ease-out, toastOut 0.3s ease-in 3s forwards;
+        }}
+        @keyframes toastIn {{
+            from {{ opacity: 0; transform: translateY(-12px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        @keyframes toastOut {{
+            from {{ opacity: 1; }}
+            to {{ opacity: 0; }}
+        }}
+
+        /* ─── Accessibility: prefer reduced motion ─── */
+        @media (prefers-reduced-motion: reduce) {{
+            .auth-form,
+            .auth-form-exit,
+            .auth-shake,
+            .auth-card::before,
+            .auth-btn:hover,
+            .auth-toast {{
+                animation: none !important;
+                transform: none !important;
+                transition: none !important;
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,

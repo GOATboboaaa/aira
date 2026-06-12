@@ -12,7 +12,7 @@ import streamlit as st
 from core import auth, models
 from core import sync as sync_mod
 from core import session as session_mod
-from core.components import footer
+from core.components import footer, auth_card, close_auth_card, trigger_shake
 from core.db import init_db
 from core.styles import inject
 
@@ -134,6 +134,7 @@ else:
 
     # ─── Vue : Forgot Password ────────────────────────────────────────
     if current_view == "forgot":
+        auth_card("forgot")
         st.markdown("### 🔐 Mot de passe oublie")
         st.caption("Saisis ton email pour recevoir un lien de reinitialisation.")
 
@@ -174,9 +175,11 @@ else:
                 f"# {auth.RESET_BASE_URL}?reset_token=TON_TOKEN",
                 language="text",
             )
+        close_auth_card()
 
     # ─── Vue : Reset Password ─────────────────────────────────────────
     elif current_view == "reset":
+        auth_card("reset")
         token = st.session_state.get("reset_token", "")
         # Verifier si le token est encore valide
         user_id = auth.verify_reset_token(token)
@@ -231,9 +234,11 @@ else:
                             st.rerun()
                         else:
                             st.error(f"❌ {msg}")
+        close_auth_card()
 
     # ─── Vue : Login / Register (defaut) ──────────────────────────
     else:
+        auth_card("login")
         st.markdown("### 🔐 Connexion")
         tab_login, tab_register = st.tabs(["Se connecter", "Creer un compte"])
 
@@ -257,6 +262,7 @@ else:
                             st.success("✅ Connecte !")
                             st.rerun()
                         else:
+                            trigger_shake("login")
                             st.error(f"❌ {msg}")
             # Lien "Mot de passe oublie"
             st.markdown(
@@ -301,5 +307,7 @@ else:
                             st.rerun()
                         else:
                             st.error(f"❌ {msg}")
+
+        close_auth_card()
 
 footer()

@@ -217,3 +217,44 @@ def page_header(title: str, subtitle: str | None = None, icon: str = ""):
     )
     if subtitle:
         st.caption(subtitle)
+
+
+def auth_card(key: str = "auth") -> None:
+    """Wrapper pour les formulaires d'authentification.
+
+    Ajoute le container stylé auth-card + animations de transition.
+    À appeler au début de chaque bloc de formulaire.
+
+    Args:
+        key: identifiant pour les animations de transition (ex: "login", "forgot").
+    """
+    st.markdown(
+        f"""<div class="auth-card" id="auth-card-{key}">
+            <div class="auth-form" id="auth-form-{key}">""",
+        unsafe_allow_html=True,
+    )
+
+
+def close_auth_card() -> None:
+    """Ferme le wrapper auth-card."""
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+
+def trigger_shake(key: str = "auth") -> None:
+    """Déclenche l'effet shake sur la carte auth via JavaScript."""
+    st.markdown(
+        f"""<script>
+            (function() {{
+                var card = document.getElementById('auth-card-{key}');
+                if (card) {{
+                    card.classList.remove('auth-shake');
+                    void card.offsetWidth;
+                    card.classList.add('auth-shake');
+                    setTimeout(function() {{
+                        card.classList.remove('auth-shake');
+                    }}, 500);
+                }}
+            }})();
+        </script>""",
+        unsafe_allow_html=True,
+    )
