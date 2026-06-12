@@ -335,17 +335,27 @@ def is_authenticated() -> bool:
 
 
 def require_auth() -> bool:
-    """Appeler en haut de chaque page. Retourne True si authentifié.
+    """Appeler en haut de chaque page. Retourne True si authentifie.
 
-    Si pas authentifié, affiche un message et propose d'aller à l'accueil.
+    Tente d'abord de restaurer la session depuis l'URL (refresh navigateur).
+    Si pas authentifie, affiche un message et propose d'aller a l'accueil.
     """
     if is_authenticated():
         return True
 
+    # Tentative de recovery depuis le session token dans l'URL
+    try:
+        from core.session import restore_from_url
+        restored = restore_from_url()
+        if restored is not None and is_authenticated():
+            return True
+    except Exception:
+        pass
+
     import streamlit as st
 
-    st.error("🔒 Tu dois être connecté pour accéder à cette page.")
-    if st.button("🏠 Aller à la page de connexion"):
+    st.error("🔒 Tu dois etre connecte pour acceder a cette page.")
+    if st.button("🏠 Aller a la page de connexion"):
         st.switch_page("app.py")
     st.stop()
     return False

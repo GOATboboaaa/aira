@@ -123,6 +123,48 @@ def cleanup_expired() -> int:
         conn.close()
 
 
+def restore_from_url() -> Optional[int]:
+    """Tente de restaurer la session depuis le query param `session` dans l'URL.
+
+    À appeler sur TOUTES les pages (app.py ET pages/*.py) au cas où
+    st.session_state aurait ete perdu (refresh navigateur).
+
+    Returns:
+        user_id si restaure avec succes, None sinon.
+    """
+    import streamlit as st
+
+    # Deja connecte → rien a faire
+    from core.auth import is_authenticated
+    if is_authenticated():
+        return None
+
+    token = st.query_params.get("session")
+    if isinstance(token, list):
+        token = token[0] if token else None
+
+    if not token:
+        return None
+
+    user_id = validate_session(token)
+    if user_id is None:
+        return None
+
+    # Restaurer : recuperer l'email et set_session
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT email FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if row:
+            from core.auth import set_session
+            set_session(user_id, row["email"])
+            return user_id
+    finally:
+        conn.close()
+    return None
+
+
 def delete_session(token: str) -> None:
     """Supprime une session specifique (utilise a la deconnexion)."""
     if not token:

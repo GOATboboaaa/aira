@@ -27,28 +27,7 @@ inject()
 
 # ─── AUTO-LOGIN : restaurer la session depuis l'URL ───────────────────────
 session_mod.cleanup_expired()
-session_token = st.query_params.get("session")
-if isinstance(session_token, list):
-    session_token = session_token[0] if session_token else None
-
-if not auth.is_authenticated() and session_token:
-    user_id = session_mod.validate_session(session_token)
-    if user_id is not None:
-        # Recuperer l'email depuis la DB
-        conn = None
-        try:
-            from core.db import get_connection
-            conn = get_connection()
-            row = conn.execute(
-                "SELECT email FROM users WHERE id = ?", (user_id,)
-            ).fetchone()
-            if row:
-                auth.set_session(user_id, row["email"])
-        except Exception:
-            pass
-        finally:
-            if conn:
-                conn.close()
+session_mod.restore_from_url()
 
 # Synchroniser les changements dictés à l'agent
 n = sync_mod.apply_pending()
@@ -91,6 +70,13 @@ if auth.is_authenticated():
     st.success(f"✅ Connecté en tant que **{user_email}**")
 
     # Cartes de navigation rapide
+    session_suffix = ""
+    session_token_url = st.query_params.get("session")
+    if isinstance(session_token_url, list):
+        session_token_url = session_token_url[0] if session_token_url else None
+    if session_token_url:
+        session_suffix = f"?session={session_token_url}"
+
     cols = st.columns(5, gap="medium")
     cards = [
         ("📊", "Dashboard", "Vue d'ensemble economique", "1_Dashboard"),
@@ -115,7 +101,7 @@ if auth.is_authenticated():
                 unsafe_allow_html=True,
             )
             if st.button(f"Ouvrir {title}", key=f"home_{page}"):
-                st.switch_page(f"pages/{page}.py")
+                st.switch_page(f"pages/{page}.py{session_suffix}")
 
     st.divider()
     cols_info = st.columns(2)

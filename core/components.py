@@ -173,8 +173,13 @@ def render_sidebar(page_title: str | None = None):
         st.markdown("### Navigation")
         for label, page in pages:
             active = "active" if page_title and Path(page).stem == page_title else ""
+            # Inclure le session token dans le lien si present
+            session_token = st.query_params.get("session")
+            if isinstance(session_token, list):
+                session_token = session_token[0] if session_token else None
+            session_suffix = f"?session={session_token}" if session_token else ""
             if st.button(label, key=f"nav_{page}", use_container_width=True):
-                st.switch_page(f"pages/{page}.py")
+                st.switch_page(f"pages/{page}.py{session_suffix}")
 
         if auth_mod.is_authenticated():
             st.divider()
