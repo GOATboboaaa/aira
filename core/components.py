@@ -9,6 +9,7 @@ Tous les composants suivent le Aira Design System :
 
 from __future__ import annotations
 
+import html as _html
 from pathlib import Path
 
 import streamlit as st
@@ -70,7 +71,12 @@ def animated_kpi_card(
 
     help_html = ""
     if help_text:
-        help_html = f'<div class="kpi-help">{help_text}</div>'
+        safe_text = _html.escape(help_text)
+        help_html = (
+            f'<span style="color:#64748B; font-size:0.7rem; margin-top:0.25rem; '
+            f'display:block; cursor:help;" title="{safe_text}">'
+            f'<span style="opacity:0.5;">ⓘ</span> {safe_text}</span>'
+        )
 
     st.markdown(
         f"""<div class="kpi-card">
