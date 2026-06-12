@@ -88,7 +88,7 @@ if auth.is_authenticated():
     for col, (icon, title, desc, page) in zip(cols, cards):
         with col:
             st.markdown(
-                f"""<div onclick="window.location.href='{page}'"
+                f"""<div onclick="window.location.href='pages/{page}.py{session_suffix}'"
                      style="cursor:pointer; background:#1A1A24; border:1px solid #2A2A3A;
                             border-radius:12px; padding:1.5rem 1rem; text-align:center;
                             transition:border-color 0.2s, transform 0.2s;"
@@ -101,7 +101,7 @@ if auth.is_authenticated():
                 unsafe_allow_html=True,
             )
             if st.button(f"Ouvrir {title}", key=f"home_{page}"):
-                st.switch_page(f"pages/{page}.py{session_suffix}")
+                st.switch_page(f"pages/{page}.py")
 
     st.divider()
     cols_info = st.columns(2)
