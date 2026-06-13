@@ -56,12 +56,38 @@ def init_expenses_table() -> None:
     """
     conn = get_connection()
     try:
+        # Migration : si la table a encore l'ancienne FK (première version),
+        # on la drop pour que le nouveau schéma (sans FK) s'applique.
+        _migrate_expenses_schema(conn)
         conn.execute(EXPENSES_INDEX)
         conn.execute(EXPENSES_UNIQUE)
         _backfill_from_depenses(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_expenses_schema(conn: sqlite3.Connection) -> None:
+    """Détecte si la table `expenses` a l'ancien schéma avec FK et la recrée."""
+    try:
+        fks = conn.execute("PRAGMA foreign_key_list(expenses)").fetchall()
+        if fks:
+            # Ancien schéma avec FK détecté → drop + recreate sans FK
+            conn.execute("DROP TABLE IF EXISTS expenses")
+            conn.execute("""
+                CREATE TABLE expenses (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id         INTEGER NOT NULL DEFAULT 0,
+                    date_expense    TEXT NOT NULL,
+                    description     TEXT NOT NULL DEFAULT '',
+                    amount          REAL NOT NULL,
+                    category        TEXT NOT NULL DEFAULT 'Autre',
+                    created_at      TEXT DEFAULT (datetime('now'))
+                )
+            """)
+    except Exception:
+        # Table n'existe pas encore → normal
+        pass
 
 
 def _backfill_from_depenses(conn: sqlite3.Connection) -> None:
