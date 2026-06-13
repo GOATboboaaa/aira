@@ -42,6 +42,11 @@ CREATE INDEX IF NOT EXISTS idx_expenses_date
     ON expenses(date_expense);
 """
 
+EXPENSES_UNIQUE = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_dedup
+    ON expenses(date_expense, description, amount);
+"""
+
 
 def init_expenses_table() -> None:
     """Crée l'index et backfill les données legacy.
@@ -52,6 +57,7 @@ def init_expenses_table() -> None:
     conn = get_connection()
     try:
         conn.execute(EXPENSES_INDEX)
+        conn.execute(EXPENSES_UNIQUE)
         _backfill_from_depenses(conn)
         conn.commit()
     finally:
@@ -120,7 +126,7 @@ def insert_expense(
     try:
         cur = conn.execute(
             """
-            INSERT INTO expenses (user_id, date_expense, description, amount, category)
+            INSERT OR IGNORE INTO expenses (user_id, date_expense, description, amount, category)
             VALUES (?, ?, ?, ?, ?)
             """,
             (user_id or 0, date_expense, description, amount, category),
@@ -236,7 +242,13 @@ def get_calendar_events(
                 "description": r["description"],
             })
 
-        #  2. Dépenses planifiées (abonnements)
+        #  2. Dépenses planifiées (abonnements) — dédoublonnées
+        # Si une dépense réelle existe le même jour avec le même montant,
+        # on skip la version planifiée pour éviter les doublons (ex: Nitro/ADOBE).
+        real_lookup: set[tuple[str, float]] = {
+            (e["start"], e["amount"]) for e in events if e["type"] == "real"
+        }
+
         rows_planned = conn.execute(
             """
             SELECT pe.id, pe.name, pe.amount, pe.due_date, pe.status,
@@ -253,6 +265,10 @@ def get_calendar_events(
         for row in rows_planned:
             r = dict(row)
             amt = r["amount"]
+            key = (r["due_date"], amt)
+            if key in real_lookup:
+                # Déjà couvert par une dépense réelle — on skip le doublon
+                continue
             name = r["name"][:40] if r["name"] else "Abonnement"
             paid = r["status"] == "paid"
             freq_color = {
@@ -325,8 +341,39 @@ def get_monthly_summary(
         ).fetchone()
 
         total_real = real["total"]
+
+        # Dédoublonnage des planifiés : on retire ceux qui matchent une dépense réelle
+        # (même jour + même montant)
+        real_set: set[tuple[str, float]] = set()
+        rows_real_dedup = conn.execute(
+            """
+            SELECT date_expense, amount FROM expenses
+            WHERE strftime('%Y', date_expense) = ?
+              AND strftime('%m', date_expense) = ?
+            """,
+            (str(year), month_str),
+        ).fetchall()
+        for r in rows_real_dedup:
+            real_set.add((r["date_expense"], r["amount"]))
+
         total_predicted = planned["total_predicted"]
         total_paid = planned["total_paid"]
+
+        # Soustraction des planifiés qui doublonnent avec une réelle
+        rows_planned_dedup = conn.execute(
+            """
+            SELECT due_date, amount, status FROM planned_expenses
+            WHERE strftime('%Y', due_date) = ?
+              AND strftime('%m', due_date) = ?
+            """,
+            (str(year), month_str),
+        ).fetchall()
+        for r in rows_planned_dedup:
+            if (r["due_date"], r["amount"]) in real_set:
+                if r["status"] == "paid":
+                    total_paid -= r["amount"]
+                else:
+                    total_predicted -= r["amount"]
 
         return {
             "total_real": total_real,
