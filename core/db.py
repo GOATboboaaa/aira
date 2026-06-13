@@ -141,6 +141,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash
     ON sessions(token_hash);
+
+-- SSOT expenses (pont asynchrone dépenses  calendrier)
+CREATE TABLE IF NOT EXISTS expenses (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL DEFAULT 0,
+    date_expense    TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    amount          REAL NOT NULL,
+    category        TEXT NOT NULL DEFAULT 'Autre',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -150,7 +161,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     existing_cols = {}
     tables = [
         "users", "projets", "depenses", "config_fiscale", "regles_categorisation",
-        "subscriptions", "planned_expenses",
+        "subscriptions", "planned_expenses", "expenses",
     ]
     for t in tables:
         rows = conn.execute(f"PRAGMA table_info({t})").fetchall()
@@ -238,3 +249,7 @@ def init_db() -> None:
         conn.commit()
     finally:
         conn.close()
+    # Init SSOT layer (table expenses + backfill legacy)
+    from core.aira_db_manager import init_expenses_table
+
+    init_expenses_table()

@@ -3,6 +3,7 @@
 import streamlit as st
 
 from core import auth, models, revolut
+from core.aira_db_manager import insert_expense
 from core.components import footer, render_sidebar
 from core.db import init_db
 from core.styles import inject
@@ -104,6 +105,13 @@ with tab_csv:
                         )
                         if ok:
                             ajoutes += 1
+                            # SSOT bridge — pont vers le calendrier
+                            insert_expense(
+                                date_expense=row["date"],
+                                description=row["description"] or "Import Revolut",
+                                amount=float(row["montant"]),
+                                category=row["categorie"],
+                            )
                         else:
                             doublons += 1
                     st.success(

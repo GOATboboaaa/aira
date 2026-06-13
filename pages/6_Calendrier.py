@@ -15,6 +15,7 @@ from datetime import date, datetime
 import streamlit as st
 
 from core import auth, models
+from core.aira_db_manager import get_calendar_events, get_monthly_summary
 from core.components import footer, render_sidebar, page_header
 from core.db import init_db
 from core.styles import inject
@@ -67,58 +68,66 @@ with col_nav:
 
 st.divider()
 
-# ─── Cashflow indicator ─────────────────────────────────────────────────────
-# Génère les planned_expenses pour le mois courant (si abonnements existent)
+# ═══════════════════════════════════════════════════════════════════════════════
+# KPIs unifiés (vraies dépenses + planifiés)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+year = st.session_state.cal_year
+month = st.session_state.cal_month
+today = date.today()
+
+# Générer les planifiés si abonnements existent
 subs = models.get_subscriptions_list()
 if subs:
-    models.generate_planned_expenses(st.session_state.cal_year, st.session_state.cal_month)
+    models.generate_planned_expenses(year, month)
 
-cf = models.get_calendar_cashflow(st.session_state.cal_year, st.session_state.cal_month)
+# KPIs unifiés via le SSOT layer
+summary = get_monthly_summary(year, month)
 
 st.markdown("### Résumé du mois")
 kpi_cols = st.columns(4, gap="medium")
 with kpi_cols[0]:
     st.metric(
-        label="Abonnements actifs",
-        value=f"{cf['abos_count']}",
+        label="Vraies dépenses",
+        value=f"{summary['total_real']:,.2f} €",
+        delta=f"{summary['count_real']} opération(s)",
+        delta_color="off",
     )
 with kpi_cols[1]:
     st.metric(
-        label="À prévoir ce mois-ci",
-        value=f"{cf['total_predicted']:,.2f} €",
-        delta=f"{-cf['total_predicted']:,.2f} €" if cf["total_predicted"] > 0 else None,
+        label="Abonnements à prévoir",
+        value=f"{summary['total_predicted']:,.2f} €",
+        delta=f"{-summary['total_predicted']:,.2f} €" if summary["total_predicted"] > 0 else None,
         delta_color="inverse",
     )
 with kpi_cols[2]:
     st.metric(
         label="Déjà payé",
-        value=f"{cf['total_paid']:,.2f} €",
+        value=f"{summary['total_paid']:,.2f} €",
     )
 with kpi_cols[3]:
     st.metric(
-        label="Total abonnements",
-        value=f"{cf['total_all']:,.2f} €",
+        label="Total du mois",
+        value=f"{summary['total_all']:,.2f} €",
     )
 
 st.divider()
 
-# ─── Calendrier Mensuel (grille HTML/CSS) ──────────────────────────────────
-year = st.session_state.cal_year
-month = st.session_state.cal_month
+# ─── Calendrier Mensuel (grille HTML/CSS) — événements unifiés ──────────────
 
-# Récupérer les dépenses planifiées
-df_planned = models.get_planned_expenses(year, month)
+# Récupérer TOUS les événements du mois (vraies dépenses + planifiés)
+events = get_calendar_events(year, month)
 
 # Indexer par jour
 expenses_by_day: dict[int, list[dict]] = {}
-for _, row in df_planned.iterrows():
+for evt in events:
     try:
-        d = int(row["due_date"][8:10])
+        d = int(evt["start"][8:10])
     except (ValueError, IndexError):
         continue
     if d not in expenses_by_day:
         expenses_by_day[d] = []
-    expenses_by_day[d].append(dict(row))
+    expenses_by_day[d].append(evt)
 
 # Couleurs par fréquence
 freq_colors = {
@@ -148,12 +157,17 @@ for week in month_days:
 
             # Badges HTML pour chaque dépense
             badges_html = ""
-            for exp in day_expenses:
-                color = freq_colors.get(exp.get("frequency"), "#7C5CFC")
-                paid = exp.get("status") == "paid"
-                amt = exp["amount"]
-                name = exp["name"][:12] + "…" if len(str(exp["name"])) > 12 else exp["name"]
-                paid_cls = " cal-paid" if paid else ""
+            for evt in day_expenses:
+                color = evt.get("color", "#7C5CFC")
+                amt = evt["amount"]
+                # Nom affiché : pour les réelles on utilise description, pour les planifiées le title
+                if evt["type"] == "real":
+                    name = (evt.get("description") or "Dépense")[:12] + "…" if len(str(evt.get("description", ""))) > 12 else (evt.get("description") or "Dépense")
+                    paid_cls = ""
+                else:
+                    name = evt["title"].split("(")[0].strip()[:12]
+                    paid = evt.get("status") == "paid"
+                    paid_cls = " cal-paid" if paid else ""
                 badges_html += (
                     f'<div class="cal-badge{paid_cls}" '
                     f'style="background:{color}22;border-left:2px solid {color};'

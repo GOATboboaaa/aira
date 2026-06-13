@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from core import auth, models
+from core.aira_db_manager import insert_expense
 from core.components import section_header, footer, render_sidebar
 from core.db import init_db
 from core.styles import inject
@@ -66,6 +67,13 @@ with st.expander("+ Ajouter une dépense", expanded=False):
                     description=description or None,
                     moyen_paiement=moyen,
                     source="manuel",
+                )
+                # SSOT write — pont vers le calendrier
+                insert_expense(
+                    date_expense=d.isoformat(),
+                    description=description or "Sans libellé",
+                    amount=montant,
+                    category=categorie,
                 )
                 st.success("✅ Dépense ajoutée.")
                 st.rerun()
