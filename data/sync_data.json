@@ -11,5 +11,31 @@
       "moyen_paiement": "Especes",
       "source": "sync"
     }
+  },
+  {
+    "id": "dep_20260614_apple_01",
+    "user_email": "couedelliam@gmail.com",
+    "table": "depenses",
+    "data": {
+      "date": "2026-06-14",
+      "montant": 1.0,
+      "categorie": "Abonnements logiciels",
+      "description": "Apple - Achat App Store",
+      "moyen_paiement": "CB",
+      "source": "sync"
+    }
+  },
+  {
+    "id": "dep_20260614_apple_02",
+    "user_email": "couedelliam@gmail.com",
+    "table": "depenses",
+    "data": {
+      "date": "2026-06-14",
+      "montant": 2.0,
+      "categorie": "Abonnements logiciels",
+      "description": "Apple - Achat App Store",
+      "moyen_paiement": "CB",
+      "source": "sync"
+    }
   }
 ]
