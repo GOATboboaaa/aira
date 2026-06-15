@@ -58,4 +58,3 @@ aira/
 ---
 
 Projet privé · Ne pas partager les données de `data/`.
-# Test connexion Mon Jun 15 12:42:07 UTC 2026
